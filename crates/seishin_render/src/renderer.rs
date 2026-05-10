@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use bytemuck::{Pod, Zeroable};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
-use crate::{Camera2D, RenderError, RenderSize, RenderState, Sprite, TextureData, TextureId};
+use crate::{
+    Camera2D, RenderError, RenderSize, RenderState, RenderTargetId, Sprite, TextureData, TextureId,
+};
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -149,6 +151,10 @@ impl Renderer {
     }
 
     pub fn render(&mut self, frame: RenderState<'_>) -> Result<(), RenderError> {
+        if frame.target != RenderTargetId::SURFACE {
+            return Err(RenderError::UnsupportedRenderTarget(frame.target));
+        }
+
         if self.size.is_zero() {
             return Ok(());
         }

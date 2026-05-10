@@ -86,8 +86,9 @@ pub mod physics {
 
 pub mod render {
     pub use seishin_render::{
-        Camera2D, ClearColor, RenderError, RenderSize, RenderState, Sprite, SpriteBatch,
-        SpriteMaterial, SpriteTint, TextureData, TextureId,
+        Camera2D, ClearColor, RenderError, RenderSize, RenderState, RenderTargetDescriptor,
+        RenderTargetId, RenderTargetKind, Sprite, SpriteBatch, SpriteMaterial, SpriteTint,
+        TextureData, TextureId,
     };
 }
 
@@ -120,8 +121,9 @@ pub mod prelude {
     pub use seishin_input::{InputState, KeyCode};
     pub use seishin_physics::Collider2D;
     pub use seishin_render::{
-        Camera2D, ClearColor, RenderError, RenderSize, RenderState, Sprite, SpriteBatch,
-        SpriteMaterial, SpriteTint, TextureData, TextureId,
+        Camera2D, ClearColor, RenderError, RenderSize, RenderState, RenderTargetDescriptor,
+        RenderTargetId, RenderTargetKind, Sprite, SpriteBatch, SpriteMaterial, SpriteTint,
+        TextureData, TextureId,
     };
     pub use seishin_render_graph::{
         NodeLabel, RenderGraph, RenderGraphContext, RenderGraphError, RenderGraphPasses,

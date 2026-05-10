@@ -26,7 +26,8 @@ use seishin_core::EngineConfig;
 use seishin_core::{Engine, EngineResult, EntityId, Game, Transform2D, UpdateContext};
 use seishin_input::{InputState, KeyCode};
 use seishin_render::{
-    Camera2D, ClearColor, RenderState, Sprite, SpriteTint, TextureData, TextureId,
+    Camera2D, ClearColor, RenderState, RenderTargetDescriptor, RenderTargetId, Sprite, SpriteTint,
+    TextureData, TextureId,
 };
 #[cfg(test)]
 use seishin_render_graph::NodeLabel;
@@ -1575,6 +1576,8 @@ impl UiElement {
 
 #[derive(Debug, Clone)]
 pub struct RenderContext {
+    target: RenderTargetId,
+    targets: Vec<RenderTargetDescriptor>,
     clear_color: ClearColor,
     camera: Camera2D,
     texture_ids: HashSet<TextureId>,
@@ -1586,6 +1589,8 @@ pub struct RenderContext {
 impl RenderContext {
     fn new(clear_color: ClearColor) -> Self {
         Self {
+            target: RenderTargetId::SURFACE,
+            targets: Vec::new(),
             clear_color,
             camera: Camera2D::default(),
             texture_ids: HashSet::new(),
@@ -1596,6 +1601,8 @@ impl RenderContext {
     }
 
     fn reset(&mut self) {
+        self.target = RenderTargetId::SURFACE;
+        self.targets.clear();
         self.texture_ids.clear();
         self.textures.clear();
         self.sprites.clear();
@@ -1608,6 +1615,26 @@ impl RenderContext {
 
     pub fn camera(&mut self, camera: Camera2D) {
         self.camera = camera;
+    }
+
+    pub fn target(&mut self, target: RenderTargetId) {
+        self.target = target;
+    }
+
+    pub fn render_target(&mut self, descriptor: RenderTargetDescriptor) {
+        if let Some(existing) = self
+            .targets
+            .iter_mut()
+            .find(|target| target.id == descriptor.id)
+        {
+            *existing = descriptor;
+        } else {
+            self.targets.push(descriptor);
+        }
+    }
+
+    pub fn render_targets(&self) -> &[RenderTargetDescriptor] {
+        &self.targets
     }
 
     pub fn texture(&mut self, texture: &Texture) {
@@ -1630,6 +1657,8 @@ impl RenderContext {
 
     fn state(&self) -> RenderState<'_> {
         RenderState {
+            target: self.target,
+            targets: &self.targets,
             clear_color: self.clear_color,
             camera: self.camera,
             textures: &self.textures,
@@ -2699,6 +2728,23 @@ mod tests {
         let state = render.state();
 
         assert_eq!(state.sprites[0].material.tint, tint);
+    }
+
+    #[test]
+    fn render_context_tracks_active_render_target() {
+        let mut render = RenderContext::new(ClearColor::BLACK);
+
+        assert_eq!(
+            render.state().target,
+            seishin_render::RenderTargetId::SURFACE
+        );
+
+        render.target(seishin_render::RenderTargetId::new(4));
+
+        assert_eq!(
+            render.state().target,
+            seishin_render::RenderTargetId::new(4)
+        );
     }
 
     #[test]

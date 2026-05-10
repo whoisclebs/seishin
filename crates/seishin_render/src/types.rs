@@ -53,6 +53,52 @@ impl RenderSize {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RenderTargetId(u64);
+
+impl RenderTargetId {
+    pub const SURFACE: Self = Self(0);
+
+    pub const fn new(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderTargetKind {
+    Surface,
+    Texture,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderTargetDescriptor {
+    pub id: RenderTargetId,
+    pub kind: RenderTargetKind,
+    pub size: RenderSize,
+}
+
+impl RenderTargetDescriptor {
+    pub const fn surface(size: RenderSize) -> Self {
+        Self {
+            id: RenderTargetId::SURFACE,
+            kind: RenderTargetKind::Surface,
+            size,
+        }
+    }
+
+    pub const fn texture(id: RenderTargetId, size: RenderSize) -> Self {
+        Self {
+            id,
+            kind: RenderTargetKind::Texture,
+            size,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera2D {
     pub x: f32,
@@ -287,6 +333,8 @@ impl SpriteBatch {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RenderState<'a> {
+    pub target: RenderTargetId,
+    pub targets: &'a [RenderTargetDescriptor],
     pub clear_color: ClearColor,
     pub camera: Camera2D,
     pub textures: &'a [TextureData],
@@ -400,6 +448,8 @@ mod tests {
             ),
         ];
         let state = RenderState {
+            target: RenderTargetId::SURFACE,
+            targets: &[],
             clear_color: ClearColor::BLACK,
             camera: Camera2D::default(),
             textures: &[],
@@ -414,6 +464,19 @@ mod tests {
                 SpriteBatch::new(TextureId::new(1), 3, 1),
             ]
         );
+    }
+
+    #[test]
+    fn render_targets_describe_surface_and_offscreen_textures() {
+        let surface = RenderTargetDescriptor::surface(RenderSize::new(800, 600));
+        let offscreen =
+            RenderTargetDescriptor::texture(RenderTargetId::new(2), RenderSize::new(320, 180));
+
+        assert_eq!(surface.id, RenderTargetId::SURFACE);
+        assert_eq!(surface.kind, RenderTargetKind::Surface);
+        assert_eq!(offscreen.id, RenderTargetId::new(2));
+        assert_eq!(offscreen.kind, RenderTargetKind::Texture);
+        assert_eq!(offscreen.size, RenderSize::new(320, 180));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::TextureId;
+use crate::{RenderTargetId, TextureId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderError {
@@ -10,6 +10,7 @@ pub enum RenderError {
     NoSurfaceFormat,
     InvalidTextureData { id: TextureId, reason: String },
     MissingTexture(TextureId),
+    UnsupportedRenderTarget(RenderTargetId),
     SurfaceTimeout,
     SurfaceOutdated,
     SurfaceLost,
@@ -29,6 +30,11 @@ impl fmt::Display for RenderError {
                 write!(f, "invalid texture data for texture {}: {reason}", id.raw())
             }
             Self::MissingTexture(id) => write!(f, "sprite referenced unknown texture {}", id.raw()),
+            Self::UnsupportedRenderTarget(id) => write!(
+                f,
+                "render target {} is not supported by the active renderer backend",
+                id.raw()
+            ),
             Self::SurfaceTimeout => write!(f, "timed out while acquiring the next surface texture"),
             Self::SurfaceOutdated => write!(f, "surface became outdated and needs reconfiguration"),
             Self::SurfaceLost => write!(f, "surface was lost and needs reconfiguration"),
