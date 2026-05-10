@@ -123,6 +123,23 @@ mod tests {
         cleanup_test_dir(root_dir);
     }
 
+    #[test]
+    fn asset_bundle_loads_bytes_and_images_without_filesystem_paths() {
+        let asset_path = AssetPath::new("sprites/player.png").expect("asset path");
+        let mut bundle = crate::AssetBundle::new();
+
+        bundle.insert(asset_path.clone(), valid_png_bytes());
+
+        let image = bundle.load_image(&asset_path).expect("image from bundle");
+
+        assert_eq!(image.width(), 1);
+        assert_eq!(image.height(), 1);
+        assert!(!bundle
+            .read_bytes(&asset_path)
+            .expect("raw bytes")
+            .is_empty());
+    }
+
     fn unique_test_dir() -> PathBuf {
         let unique = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()

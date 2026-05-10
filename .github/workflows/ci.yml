@@ -36,6 +36,14 @@ jobs:
         if: runner.os == 'Linux'
         run: rustup target add wasm32-unknown-unknown
 
+      - name: Install Android Target
+        if: runner.os == 'Linux'
+        run: rustup target add aarch64-linux-android
+
+      - name: Install iOS Target
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-ios
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
@@ -54,3 +62,11 @@ jobs:
       - name: Build Web Example
         if: runner.os == 'Linux'
         run: cargo build --target wasm32-unknown-unknown -p seishin_basic_2d
+
+      - name: Check Android Runtime
+        if: runner.os == 'Linux'
+        run: cargo check --target aarch64-linux-android -p seishin --no-default-features --features android
+
+      - name: Check iOS Runtime
+        if: runner.os == 'macOS'
+        run: cargo check --target aarch64-apple-ios -p seishin --no-default-features --features ios

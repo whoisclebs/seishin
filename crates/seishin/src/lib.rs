@@ -115,7 +115,7 @@ pub mod prelude {
         SpriteBundle, SpriteRenderer, StartupContext, Texture, UiDrawCommand, UiDrawKind,
         UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
     };
-    pub use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
+    pub use seishin_assets::{AssetBundle, AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{
         AudioSkipReason, AudioSystem, PlaybackControlResult, PlaybackHandle, PlaybackInfo,
         PlaybackResult, PlaybackSettings, PlaybackState, SoundAsset,
@@ -123,7 +123,7 @@ pub mod prelude {
     pub use seishin_core::{
         Engine, EngineConfig, EngineError, EngineResult, EntityId, Game, Transform2D, UpdateContext,
     };
-    pub use seishin_input::{InputState, KeyCode};
+    pub use seishin_input::{InputState, KeyCode, TouchPoint};
     pub use seishin_physics::Collider2D;
     pub use seishin_render::{
         Camera2D, ClearColor, RenderError, RenderSize, RenderState, RenderTargetDescriptor,
@@ -148,6 +148,11 @@ pub mod prelude {
     )))]
     pub use seishin_runtime::{
         run_headless, DesktopRuntimeError, FixedTimestep, HeadlessRunConfig,
+    };
+    #[cfg(any(feature = "android", feature = "ios"))]
+    pub use seishin_runtime::{
+        MobileLifecycleEvent, MobileRunConfig, MobileRuntime, MobileRuntimeState, MobileSurface,
+        MobileTouchEvent, MobileTouchPhase,
     };
     pub use seishin_world::{
         AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,

@@ -10,7 +10,6 @@ rust-version.workspace = true
 seishin_core.workspace = true
 seishin_input.workspace = true
 seishin_render = { workspace = true, default-features = false }
-pollster = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -20,9 +19,11 @@ web-sys = { workspace = true, optional = true, features = ["console", "Document"
 
 [features]
 default = ["desktop"]
-desktop = ["dep:pollster", "dep:winit", "seishin_render/wgpu-backend"]
+desktop = ["dep:winit", "seishin_render/wgpu-backend"]
+mobile = []
+android = ["mobile"]
+ios = ["mobile"]
 web = [
-    "dep:pollster",
     "dep:winit",
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",

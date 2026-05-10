@@ -1,7 +1,6 @@
 use std::rc::Rc;
 use std::{cell::RefCell, mem};
 
-use pollster::block_on;
 use seishin_core::{Engine, Game};
 use seishin_input::{InputState, KeyCode};
 use seishin_render::{RenderError, RenderSize, RenderState, Renderer};
@@ -12,7 +11,7 @@ use winit::keyboard::{KeyCode as WinitKeyCode, PhysicalKey};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::WindowBuilder;
 
-use crate::{DesktopRuntimeError, FixedTimestep};
+use crate::{block_on::block_on, DesktopRuntimeError, FixedTimestep};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSize {

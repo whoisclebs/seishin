@@ -49,9 +49,9 @@ fn dependency_audit_entries() -> &'static [DependencyAuditEntry] {
         DependencyAuditEntry {
             name: "image",
             category: "convenience",
-            recommendation: "keep optional, evaluate internal replacement",
+            recommendation: "keep optional",
             notes:
-                "Only PNG decoding is enabled; candidate for a tiny format-specific loader later.",
+                "PNG is the only raster decode format; disabled by no-default builds and still covered by loader tests.",
         },
         DependencyAuditEntry {
             name: "js-sys",
@@ -64,12 +64,6 @@ fn dependency_audit_entries() -> &'static [DependencyAuditEntry] {
             category: "backend",
             recommendation: "keep optional native-only",
             notes: "Provides desktop audio playback; target-gated away from wasm.",
-        },
-        DependencyAuditEntry {
-            name: "pollster",
-            category: "convenience",
-            recommendation: "evaluate internal replacement",
-            notes: "Small helper for blocking async runtime/renderer initialization.",
         },
         DependencyAuditEntry {
             name: "raw-window-handle",
@@ -154,11 +148,18 @@ fn render_dependency_audit() -> String {
     output.push_str("\nFeature checks:\n");
     output
         .push_str("- `seishin_no_default_wasm` keeps a no-default build in the workspace tests.\n");
+    output.push_str(
+        "- Desktop runtime initialization uses an internal no-dependency `block_on` helper.\n",
+    );
     output.push_str("- `seishin_audio/kira-backend` is optional and native-target gated.\n");
     output.push_str(
         "- `seishin_audio/web` carries browser audio bindings separately from native audio.\n",
     );
     output.push_str("- CI builds the wasm example once on Linux while desktop validation runs on Linux, Windows, and macOS.\n");
+    output.push_str("\nImage format policy:\n");
+    output.push_str("- Seishin engine asset loading supports PNG raster textures through the optional `seishin_assets/png` feature.\n");
+    output.push_str("- No-default builds do not decode raster images; they can still read raw asset bytes for custom pipelines.\n");
+    output.push_str("- An internal PNG replacement is deferred until the project can justify owning PNG chunk, filter, and zlib/deflate maintenance.\n");
     output
 }
 
@@ -633,5 +634,13 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(missing, Vec::<String>::new());
+    }
+
+    #[test]
+    fn dependency_audit_records_image_format_policy() {
+        let audit = super::render_dependency_audit();
+
+        assert!(audit.contains("Image format policy:"));
+        assert!(audit.contains("PNG"));
     }
 }

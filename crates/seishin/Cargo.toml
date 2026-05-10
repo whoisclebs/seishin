@@ -30,6 +30,8 @@ web-sys = { workspace = true, optional = true, features = ["console", "Document"
 [features]
 default = ["desktop", "render-wgpu", "png"]
 desktop = ["seishin_runtime/desktop", "render-wgpu"]
+android = ["seishin_runtime/android"]
+ios = ["seishin_runtime/ios"]
 web = [
     "dep:serde_json",
     "dep:wasm-bindgen",

@@ -1,3 +1,4 @@
+mod bundle;
 mod error;
 mod handle;
 mod image;
@@ -5,6 +6,7 @@ mod loader;
 mod path;
 mod platform;
 
+pub use bundle::AssetBundle;
 pub use error::AssetError;
 pub use handle::{AssetHandle, ImageAsset};
 pub use image::ImageData;
