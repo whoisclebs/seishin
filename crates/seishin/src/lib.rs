@@ -115,7 +115,10 @@ pub mod prelude {
         UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
     };
     pub use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
-    pub use seishin_audio::{AudioSkipReason, AudioSystem, PlaybackResult, SoundAsset};
+    pub use seishin_audio::{
+        AudioSkipReason, AudioSystem, PlaybackControlResult, PlaybackHandle, PlaybackInfo,
+        PlaybackResult, PlaybackSettings, PlaybackState, SoundAsset,
+    };
     pub use seishin_core::{
         Engine, EngineConfig, EngineError, EngineResult, EntityId, Game, Transform2D, UpdateContext,
     };

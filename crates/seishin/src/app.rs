@@ -17,7 +17,10 @@ use std::{
 
 use crate::platform;
 use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
-use seishin_audio::{AudioSystem, PlaybackResult, SoundAsset};
+use seishin_audio::{
+    AudioSystem, PlaybackControlResult, PlaybackHandle, PlaybackResult, PlaybackSettings,
+    SoundAsset,
+};
 #[cfg(any(
     all(not(target_arch = "wasm32"), feature = "desktop"),
     all(target_arch = "wasm32", feature = "web")
@@ -1366,11 +1369,58 @@ impl FrameContext<'_> {
         self.audio.play_sound(sound)
     }
 
+    pub fn play_sound_with(
+        &mut self,
+        sound: AssetHandle<SoundAsset>,
+        settings: PlaybackSettings,
+    ) -> PlaybackResult {
+        self.audio.play_sound_with(sound, settings)
+    }
+
     pub fn play_entity_audio(&mut self, entity: Entity) -> Option<PlaybackResult> {
         self.audio_cache
             .get(&entity)
             .copied()
             .map(|sound| self.audio.play_sound(sound))
+    }
+
+    pub fn play_entity_audio_with(
+        &mut self,
+        entity: Entity,
+        settings: PlaybackSettings,
+    ) -> Option<PlaybackResult> {
+        self.audio_cache
+            .get(&entity)
+            .copied()
+            .map(|sound| self.audio.play_sound_with(sound, settings))
+    }
+
+    pub fn master_volume(&self) -> f32 {
+        self.audio.master_volume()
+    }
+
+    pub fn set_master_volume(&mut self, volume: f32) -> PlaybackControlResult {
+        self.audio.set_master_volume(volume)
+    }
+
+    pub fn pause_audio(&mut self, playback: PlaybackHandle) -> PlaybackControlResult {
+        self.audio.pause_playback(playback)
+    }
+
+    pub fn resume_audio(&mut self, playback: PlaybackHandle) -> PlaybackControlResult {
+        self.audio.resume_playback(playback)
+    }
+
+    pub fn stop_audio(&mut self, playback: PlaybackHandle) -> PlaybackControlResult {
+        self.audio.stop_playback(playback)
+    }
+
+    pub fn set_audio_volume(
+        &mut self,
+        playback: PlaybackHandle,
+        volume: f32,
+    ) -> PlaybackControlResult {
+        self.audio.set_playback_volume(playback, volume)
     }
 
     pub fn ui_interaction(&self, entity: Entity) -> Option<&UiInteractionRef> {
@@ -3449,6 +3499,22 @@ mod tests {
             ))
         );
         assert_eq!(frame.play_entity_audio(EntityId::new(999)), None);
+
+        assert_eq!(
+            frame.set_master_volume(0.4),
+            seishin_audio::PlaybackControlResult::Applied
+        );
+        assert_eq!(frame.master_volume(), 0.4);
+
+        let missing = seishin_audio::PlaybackHandle::from_id(404);
+        assert_eq!(
+            frame.pause_audio(missing),
+            seishin_audio::PlaybackControlResult::Missing(missing)
+        );
+        assert_eq!(
+            frame.set_audio_volume(missing, 0.2),
+            seishin_audio::PlaybackControlResult::Missing(missing)
+        );
     }
 
     #[test]
