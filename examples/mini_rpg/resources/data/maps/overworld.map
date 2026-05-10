@@ -8,22 +8,22 @@ columns = 10
 
 [legend.0]
 name = "grass"
-atlas_index = 11
+atlas_index = 0
 collision = "none"
 
 [legend.1]
 name = "stone_wall"
-atlas_index = 44
+atlas_index = 32
 collision = "solid"
 
 [legend.2]
 name = "water"
-atlas_index = 0
+atlas_index = 11
 collision = "solid"
 
 [legend.3]
 name = "dirt_path"
-atlas_index = 77
+atlas_index = 31
 collision = "none"
 
 [tiles]
