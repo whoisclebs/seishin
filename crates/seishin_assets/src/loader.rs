@@ -66,6 +66,24 @@ mod tests {
     }
 
     #[test]
+    fn asset_bytes_can_be_loaded_without_image_decoding() {
+        let root_dir = unique_test_dir();
+        let audio_path = root_dir.join("audio").join("beep.wav");
+
+        fs::create_dir_all(audio_path.parent().expect("audio parent")).expect("create asset tree");
+        fs::write(&audio_path, b"audio bytes").expect("write asset fixture");
+
+        let root = AssetRoot::new(&root_dir).expect("asset root");
+        let asset_path = AssetPath::new("audio/beep.wav").expect("asset path");
+
+        let bytes = crate::read_asset_bytes(&root, &asset_path).expect("read asset bytes");
+
+        assert_eq!(bytes, b"audio bytes");
+
+        cleanup_test_dir(root_dir);
+    }
+
+    #[test]
     fn missing_files_return_controlled_error() {
         let root_dir = unique_test_dir();
         fs::create_dir_all(&root_dir).expect("create root");

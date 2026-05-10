@@ -7,9 +7,16 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-kira = { workspace = true, optional = true }
 seishin_assets = { workspace = true, default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+kira = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = ["HtmlAudioElement", "HtmlMediaElement"] }
 
 [features]
 default = ["kira-backend"]
 kira-backend = ["dep:kira"]
+web = ["dep:wasm-bindgen", "dep:web-sys", "seishin_assets/web"]

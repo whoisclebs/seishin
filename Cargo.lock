@@ -1683,6 +1683,8 @@ version = "0.1.0"
 dependencies = [
  "kira",
  "seishin_assets",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

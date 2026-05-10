@@ -27,7 +27,9 @@ pub fn resolve_sound_asset(
     root: &AssetRoot,
     asset_path: &AssetPath,
 ) -> Result<PathBuf, AssetError> {
-    Ok(root.resolve(asset_path))
+    let joined = root.resolve(asset_path);
+    seishin_assets::read_asset_bytes(root, asset_path)?;
+    Ok(joined)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

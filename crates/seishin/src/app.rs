@@ -2062,9 +2062,14 @@ fn update_builtin_dialogue_interaction(context: &mut FrameContext<'_>) -> GameRe
     Ok(())
 }
 
-#[cfg(any(test, target_arch = "wasm32"))]
+#[cfg(any(test, all(target_arch = "wasm32", not(feature = "web"))))]
 fn default_audio_system() -> AudioSystem {
     AudioSystem::without_backend("audio backend disabled for this target")
+}
+
+#[cfg(all(not(test), target_arch = "wasm32", feature = "web"))]
+fn default_audio_system() -> AudioSystem {
+    AudioSystem::new()
 }
 
 #[cfg(all(not(test), not(target_arch = "wasm32")))]
