@@ -1,0 +1,17 @@
+[package]
+name = "seishin_render"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bytemuck = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+seishin_core.workspace = true
+wgpu = { workspace = true, optional = true }
+
+[features]
+default = ["wgpu-backend"]
+wgpu-backend = ["dep:bytemuck", "dep:raw-window-handle", "dep:wgpu"]

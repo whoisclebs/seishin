@@ -1,0 +1,7 @@
+[components.sprite]
+texture = "asset://sprites/player.png"
+width = 96.0
+height = 96.0
+
+[components.tags]
+values = ["npc"]
