@@ -1,3 +1,5 @@
+use crate::Aabb;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Collider2D {
     pub width: f32,
@@ -7,6 +9,10 @@ pub struct Collider2D {
 impl Collider2D {
     pub fn rectangle(width: f32, height: f32) -> Self {
         Self { width, height }
+    }
+
+    pub fn aabb_centered_at(self, center_x: f32, center_y: f32) -> Aabb {
+        Aabb::from_center_size(center_x, center_y, self.width, self.height)
     }
 }
 
