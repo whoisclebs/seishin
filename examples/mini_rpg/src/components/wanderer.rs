@@ -69,15 +69,6 @@ pub fn wanderer_controller_factory(config: &toml::Value) -> GameResult<Box<dyn C
     Ok(Box::new(WandererController::new(speed)))
 }
 
-pub struct WandererControllerDefinition;
-
-impl ComponentDefinition for WandererControllerDefinition {
-    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
-        app.register_component_factory("WandererController", wanderer_controller_factory)?;
-        Ok(())
-    }
-}
-
-pub fn new() -> WandererControllerDefinition {
-    WandererControllerDefinition
+pub fn new() -> impl ComponentDefinition {
+    component_factory("WandererController", wanderer_controller_factory)
 }

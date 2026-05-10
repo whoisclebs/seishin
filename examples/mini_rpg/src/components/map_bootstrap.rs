@@ -39,15 +39,6 @@ pub fn map_bootstrap_factory(_: &toml::Value) -> GameResult<Box<dyn Component>> 
     Ok(Box::new(MapBootstrap::new()))
 }
 
-pub struct MapBootstrapDefinition;
-
-impl ComponentDefinition for MapBootstrapDefinition {
-    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
-        app.register_component_factory("MapBootstrap", map_bootstrap_factory)?;
-        Ok(())
-    }
-}
-
-pub fn new() -> MapBootstrapDefinition {
-    MapBootstrapDefinition
+pub fn new() -> impl ComponentDefinition {
+    component_factory("MapBootstrap", map_bootstrap_factory)
 }

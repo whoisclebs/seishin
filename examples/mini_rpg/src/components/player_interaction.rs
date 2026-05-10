@@ -38,17 +38,8 @@ pub fn player_interaction_factory(config: &toml::Value) -> GameResult<Box<dyn Co
     )))
 }
 
-pub struct PlayerInteractionDefinition;
-
-impl ComponentDefinition for PlayerInteractionDefinition {
-    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
-        app.register_component_factory("PlayerInteraction", player_interaction_factory)?;
-        Ok(())
-    }
-}
-
-pub fn new() -> PlayerInteractionDefinition {
-    PlayerInteractionDefinition
+pub fn new() -> impl ComponentDefinition {
+    component_factory("PlayerInteraction", player_interaction_factory)
 }
 
 impl Component for PlayerInteraction {

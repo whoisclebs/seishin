@@ -122,15 +122,6 @@ pub fn player_controller_factory(config: &toml::Value) -> GameResult<Box<dyn Com
     Ok(Box::new(PlayerController::new(speed, step_sound_cooldown)))
 }
 
-pub struct PlayerControllerDefinition;
-
-impl ComponentDefinition for PlayerControllerDefinition {
-    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
-        app.register_component_factory("PlayerController", player_controller_factory)?;
-        Ok(())
-    }
-}
-
-pub fn new() -> PlayerControllerDefinition {
-    PlayerControllerDefinition
+pub fn new() -> impl ComponentDefinition {
+    component_factory("PlayerController", player_controller_factory)
 }

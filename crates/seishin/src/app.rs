@@ -331,6 +331,52 @@ pub trait ComponentDefinition {
     fn build(&self, app: &mut StartupContext) -> GameResult<()>;
 }
 
+impl<F> ComponentDefinition for F
+where
+    F: Fn(&mut StartupContext) -> GameResult<()> + 'static,
+{
+    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
+        self(app)
+    }
+}
+
+pub struct ComponentFactoryDefinition {
+    name: String,
+    factory: Arc<ComponentFactoryFn>,
+}
+
+type ComponentFactoryFn = dyn Fn(&toml::Value) -> GameResult<Box<dyn Component>> + 'static;
+
+impl ComponentFactoryDefinition {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl ComponentDefinition for ComponentFactoryDefinition {
+    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
+        let factory = self.factory.clone();
+        app.register_component_factory(self.name.clone(), move |config| factory(config))?;
+        Ok(())
+    }
+}
+
+pub fn component<T: Component + Default + 'static>(
+    name: impl Into<String>,
+) -> ComponentFactoryDefinition {
+    component_factory(name, |_| Ok(Box::<T>::default()))
+}
+
+pub fn component_factory<F>(name: impl Into<String>, factory: F) -> ComponentFactoryDefinition
+where
+    F: Fn(&toml::Value) -> GameResult<Box<dyn Component>> + 'static,
+{
+    ComponentFactoryDefinition {
+        name: name.into(),
+        factory: Arc::new(factory),
+    }
+}
+
 pub struct AppBuilder {
     app: App,
     plugins: Vec<Box<dyn Plugin>>,
@@ -1073,6 +1119,9 @@ impl ComponentRegistry {
         if name.trim().is_empty() {
             return Err("component registration name must not be empty".into());
         }
+        if self.registrations.contains_key(&name) {
+            return Err(format!("component '{name}' is already registered").into());
+        }
 
         self.registrations.insert(
             name,
@@ -1093,6 +1142,9 @@ impl ComponentRegistry {
         if name.trim().is_empty() {
             return Err("component registration name must not be empty".into());
         }
+        if self.registrations.contains_key(&name) {
+            return Err(format!("component '{name}' is already registered").into());
+        }
 
         self.registrations.insert(
             name,
@@ -1106,6 +1158,16 @@ impl ComponentRegistry {
 
     pub fn contains(&self, name: &str) -> bool {
         self.registrations.contains_key(name)
+    }
+
+    pub fn names(&self) -> Vec<&str> {
+        let mut names = self
+            .registrations
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        names.sort();
+        names
     }
 
     fn type_id(&self, name: &str) -> Option<TypeId> {
@@ -2980,9 +3042,15 @@ fn validate_custom_components(
     for component in &record.custom_components {
         if !registry.contains(&component.type_name) {
             let name = record.name.as_deref().unwrap_or("<unnamed>");
+            let registered = registry.names();
+            let registered = if registered.is_empty() {
+                "none".to_string()
+            } else {
+                registered.join(", ")
+            };
             return Err(format!(
-                "unknown component type '{}' while loading entity '{}'; register it with App::add_component(...) before run()",
-                component.type_name, name
+                "unknown component type '{}' while loading entity '{}'; registered components: {}; register it with App::add_component(...) before run()",
+                component.type_name, name, registered
             )
             .into());
         }
@@ -4321,6 +4389,84 @@ mod tests {
     }
 
     #[test]
+    fn component_factory_helper_registers_scene_component() {
+        LAST_CONFIG_SPEED_BITS.store(0, std::sync::atomic::Ordering::SeqCst);
+        let builder = App::new("component-helper").add_component(component_factory(
+            "ConfiguredController",
+            configured_test_controller_factory,
+        ));
+        let mut startup = startup_with_scene(
+            "component-helper.scene.toml",
+            r#"
+            [[entities]]
+            name = "Configured"
+
+            [[entities.components]]
+            type = "ConfiguredController"
+            speed = 654.0
+            "#,
+        );
+
+        for component in &builder.builder.components {
+            component.build(&mut startup).expect("component build");
+        }
+        startup.load_main_scene().expect("load scene");
+
+        assert_eq!(
+            f32::from_bits(LAST_CONFIG_SPEED_BITS.load(std::sync::atomic::Ordering::SeqCst)),
+            654.0
+        );
+    }
+
+    #[test]
+    fn duplicate_component_registration_reports_clear_error() {
+        let mut startup = startup_with_scene(
+            "duplicate-component.scene.toml",
+            r#"
+            [[entities]]
+            name = "Empty"
+            "#,
+        );
+
+        startup
+            .register_component::<TestController>("DuplicateController")
+            .expect("first registration");
+        let error = match startup.register_component::<TestController>("DuplicateController") {
+            Ok(_) => panic!("duplicate registration must fail"),
+            Err(error) => error,
+        };
+
+        assert!(error
+            .to_string()
+            .contains("component 'DuplicateController' is already registered"));
+    }
+
+    #[test]
+    fn unknown_scene_component_lists_registered_components() {
+        let mut startup = startup_with_scene(
+            "unknown-component-diagnostics.scene.toml",
+            r#"
+            [[entities]]
+            name = "Player"
+
+            [[entities.components]]
+            type = "MissingController"
+            "#,
+        );
+        startup
+            .register_component::<TestController>("ConfiguredController")
+            .expect("register configured controller");
+
+        let error = startup.load_main_scene().expect_err("load must fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unknown component type 'MissingController'"));
+        assert!(message.contains("entity 'Player'"));
+        assert!(message.contains("registered components: ConfiguredController"));
+        assert!(message.contains("App::add_component(...)"));
+    }
+
+    #[test]
     fn plugin_registers_scene_component_before_scene_load() {
         LAST_CONFIG_SPEED_BITS.store(0, std::sync::atomic::Ordering::SeqCst);
         let mut startup = startup_with_scene(
@@ -4340,7 +4486,7 @@ mod tests {
                 .register_factory("ConfiguredController", configured_test_controller_factory)
         };
 
-        plugin.build(&mut startup).expect("plugin build");
+        Plugin::build(&plugin, &mut startup).expect("plugin build");
         startup.load_main_scene().expect("load scene");
 
         assert_eq!(
@@ -4418,7 +4564,7 @@ mod tests {
             Err("plugin failed during startup".into())
         };
 
-        let error = plugin.build(&mut startup).expect_err("plugin should fail");
+        let error = Plugin::build(&plugin, &mut startup).expect_err("plugin should fail");
 
         assert!(error.to_string().contains("plugin failed during startup"));
         assert_eq!(startup.world.entities().count(), 0);

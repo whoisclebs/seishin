@@ -43,10 +43,8 @@ pub fn player_camera_factory(
     Ok(Box::new(PlayerCamera::new(camera, zoom)))
 }
 
-pub struct PlayerCameraDefinition;
-
-impl ComponentDefinition for PlayerCameraDefinition {
-    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
+pub fn new() -> impl ComponentDefinition {
+    |app: &mut StartupContext| {
         let camera = app
             .resource::<Camera2DHandle>()
             .cloned()
@@ -61,8 +59,4 @@ impl ComponentDefinition for PlayerCameraDefinition {
         })?;
         Ok(())
     }
-}
-
-pub fn new() -> PlayerCameraDefinition {
-    PlayerCameraDefinition
 }
