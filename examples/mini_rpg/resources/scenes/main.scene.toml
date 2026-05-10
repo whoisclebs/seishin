@@ -1,5 +1,4 @@
 [[entities]]
-id = 1
 name = "Player"
 prefab = "res://prefabs/player.prefab.toml"
 
@@ -14,7 +13,6 @@ values = ["player"]
 character = "res://data/characters/player.toml"
 
 [[entities]]
-id = 2
 name = "Merchant"
 prefab = "res://prefabs/npc.prefab.toml"
 
@@ -32,7 +30,6 @@ values = ["npc", "character"]
 character = "res://data/characters/merchant.toml"
 
 [[entities]]
-id = 3
 name = "Goblin"
 prefab = "res://prefabs/goblin.prefab.toml"
 
