@@ -1706,6 +1706,7 @@ fn sorted_ui_elements(world: &World) -> Vec<UiElement> {
             record.ui.as_ref().map(|ui| UiElement {
                 entity,
                 ui: ui.clone(),
+                computed_rect: None,
             })
         })
         .collect::<Vec<_>>();
@@ -1714,8 +1715,171 @@ fn sorted_ui_elements(world: &World) -> Vec<UiElement> {
     elements
 }
 
+fn ui_elements_for_viewport(world: &World, viewport: RenderSize) -> Vec<UiElement> {
+    let ui_by_entity = world
+        .entities()
+        .filter_map(|(entity, record)| record.ui.as_ref().map(|ui| (entity, ui.clone())))
+        .collect::<HashMap<_, _>>();
+    let mut children: HashMap<Entity, Vec<Entity>> = HashMap::new();
+    let mut roots = Vec::new();
+
+    for (entity, ui) in &ui_by_entity {
+        match ui.layout.parent {
+            Some(parent) if ui_by_entity.contains_key(&parent) => {
+                children.entry(parent).or_default().push(*entity);
+            }
+            _ => roots.push(*entity),
+        }
+    }
+
+    roots.sort();
+    for children in children.values_mut() {
+        children.sort_by_key(|entity| {
+            let z_index = ui_by_entity
+                .get(entity)
+                .map(|ui| ui.layout.z_index)
+                .unwrap_or_default();
+            (z_index, *entity)
+        });
+    }
+
+    let mut rects = HashMap::new();
+    let mut visiting = HashSet::new();
+    for root in roots {
+        let Some(ui) = ui_by_entity.get(&root) else {
+            continue;
+        };
+        let rect = UiRect::from_layout(ui.layout, viewport);
+        rects.insert(root, rect);
+        layout_ui_children(
+            root,
+            rect,
+            &ui_by_entity,
+            &children,
+            &mut rects,
+            &mut visiting,
+        );
+    }
+
+    let mut elements = ui_by_entity
+        .into_iter()
+        .map(|(entity, ui)| UiElement {
+            entity,
+            ui,
+            computed_rect: rects.get(&entity).copied(),
+        })
+        .collect::<Vec<_>>();
+
+    elements.sort_by_key(|element| (element.ui.layout.z_index, element.entity));
+    elements
+}
+
+fn layout_ui_children(
+    parent: Entity,
+    parent_rect: UiRect,
+    ui_by_entity: &HashMap<Entity, UiRef>,
+    children: &HashMap<Entity, Vec<Entity>>,
+    rects: &mut HashMap<Entity, UiRect>,
+    visiting: &mut HashSet<Entity>,
+) {
+    if !visiting.insert(parent) {
+        return;
+    }
+
+    let Some(parent_ui) = ui_by_entity.get(&parent) else {
+        visiting.remove(&parent);
+        return;
+    };
+    let Some(child_entities) = children.get(&parent) else {
+        visiting.remove(&parent);
+        return;
+    };
+
+    let padding = parent_ui.layout.padding.max(0.0);
+    let gap = parent_ui.layout.gap.max(0.0);
+    let content_x = parent_rect.x + padding;
+    let content_y = parent_rect.y + padding;
+    let content_width = (parent_rect.width - padding * 2.0).max(0.0);
+    let content_height = (parent_rect.height - padding * 2.0).max(0.0);
+    let is_row = parent_ui.layout.flex_direction == seishin_world::UiFlexDirection::Row;
+    let available_main = if is_row {
+        content_width
+    } else {
+        content_height
+    };
+    let total_gap = gap * child_entities.len().saturating_sub(1) as f32;
+    let total_base = child_entities
+        .iter()
+        .filter_map(|entity| ui_by_entity.get(entity))
+        .map(|ui| {
+            if is_row {
+                ui.layout.width.max(0.0)
+            } else {
+                ui.layout.height.max(0.0)
+            }
+        })
+        .sum::<f32>();
+    let total_grow = child_entities
+        .iter()
+        .filter_map(|entity| ui_by_entity.get(entity))
+        .map(|ui| ui.layout.grow.max(0.0))
+        .sum::<f32>();
+    let remaining = (available_main - total_base - total_gap).max(0.0);
+    let mut cursor = if is_row { content_x } else { content_y };
+
+    for child in child_entities {
+        let Some(child_ui) = ui_by_entity.get(child) else {
+            continue;
+        };
+        let grow = child_ui.layout.grow.max(0.0);
+        let grow_size = if total_grow > 0.0 {
+            remaining * (grow / total_grow)
+        } else {
+            0.0
+        };
+        let width = if is_row {
+            child_ui.layout.width.max(0.0) + grow_size
+        } else if child_ui.layout.width > 0.0 {
+            child_ui.layout.width
+        } else {
+            content_width
+        };
+        let height = if is_row {
+            if child_ui.layout.height > 0.0 {
+                child_ui.layout.height
+            } else {
+                content_height
+            }
+        } else {
+            child_ui.layout.height.max(0.0) + grow_size
+        };
+        let rect = if is_row {
+            UiRect::new(
+                cursor + child_ui.layout.offset_x,
+                content_y + child_ui.layout.offset_y,
+                width,
+                height,
+            )
+        } else {
+            UiRect::new(
+                content_x + child_ui.layout.offset_x,
+                cursor + child_ui.layout.offset_y,
+                width,
+                height,
+            )
+        };
+
+        rects.insert(*child, rect);
+        layout_ui_children(*child, rect, ui_by_entity, children, rects, visiting);
+
+        cursor += if is_row { width } else { height } + gap;
+    }
+
+    visiting.remove(&parent);
+}
+
 fn ui_hit_test_world(world: &World, x: f32, y: f32, viewport: RenderSize) -> Option<UiElement> {
-    sorted_ui_elements(world)
+    ui_elements_for_viewport(world, viewport)
         .into_iter()
         .filter(|element| element.rect(viewport).contains(x, y))
         .max_by_key(|element| (element.ui.layout.z_index, element.entity))
@@ -2004,6 +2168,10 @@ impl FrameContext<'_> {
     pub fn ui_hit_test(&self, x: f32, y: f32, viewport: RenderSize) -> Option<Entity> {
         ui_hit_test_world(self.world, x, y, viewport).map(|element| element.entity())
     }
+
+    pub fn ui_layout(&self, viewport: RenderSize) -> Vec<UiElement> {
+        ui_elements_for_viewport(self.world, viewport)
+    }
 }
 
 pub struct Query<'a> {
@@ -2268,6 +2436,7 @@ struct ButtonAction {
 pub struct UiElement {
     entity: Entity,
     ui: UiRef,
+    computed_rect: Option<UiRect>,
 }
 
 impl UiElement {
@@ -2280,7 +2449,12 @@ impl UiElement {
     }
 
     pub fn rect(&self, viewport: RenderSize) -> UiRect {
-        UiRect::from_layout(self.ui.layout, viewport)
+        self.computed_rect
+            .unwrap_or_else(|| UiRect::from_layout(self.ui.layout, viewport))
+    }
+
+    pub fn computed_rect(&self) -> Option<UiRect> {
+        self.computed_rect
     }
 }
 
@@ -3817,6 +3991,7 @@ mod tests {
                 z_index: 1,
                 ..Default::default()
             }),
+            computed_rect: None,
         });
         render.ui_element(UiElement {
             entity: EntityId::new(2),
@@ -3827,6 +4002,7 @@ mod tests {
                 z_index: 2,
                 ..Default::default()
             }),
+            computed_rect: None,
         });
 
         let viewport = RenderSize::new(100, 100);
@@ -3907,6 +4083,80 @@ mod tests {
         assert_eq!(
             frame.ui_hit_test(50.0, 50.0, RenderSize::new(100, 100)),
             Some(front)
+        );
+    }
+
+    #[test]
+    fn ui_layout_places_children_in_row_with_gap_padding_and_grow() {
+        let mut world = World::default();
+        let container = EntityId::new(1);
+        let fixed = EntityId::new(2);
+        let grown = EntityId::new(3);
+
+        world
+            .insert(
+                container,
+                EntityRecord {
+                    ui: Some(UiRef::new(seishin_world::UiLayoutRef {
+                        width: 300.0,
+                        height: 80.0,
+                        padding: 10.0,
+                        gap: 5.0,
+                        flex_direction: seishin_world::UiFlexDirection::Row,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("container");
+        world
+            .insert(
+                fixed,
+                EntityRecord {
+                    ui: Some(UiRef::new(seishin_world::UiLayoutRef {
+                        parent: Some(container),
+                        width: 50.0,
+                        height: 20.0,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("fixed");
+        world
+            .insert(
+                grown,
+                EntityRecord {
+                    ui: Some(UiRef::new(seishin_world::UiLayoutRef {
+                        parent: Some(container),
+                        width: 50.0,
+                        height: 20.0,
+                        grow: 1.0,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("grown");
+
+        let layout = ui_elements_for_viewport(&world, RenderSize::new(300, 80));
+        let fixed_rect = layout
+            .iter()
+            .find(|element| element.entity() == fixed)
+            .and_then(UiElement::computed_rect)
+            .expect("fixed rect");
+        let grown_rect = layout
+            .iter()
+            .find(|element| element.entity() == grown)
+            .and_then(UiElement::computed_rect)
+            .expect("grown rect");
+
+        assert_eq!(fixed_rect, UiRect::new(10.0, 10.0, 50.0, 20.0));
+        assert_eq!(grown_rect, UiRect::new(65.0, 10.0, 225.0, 20.0));
+        assert_eq!(
+            ui_hit_test_world(&world, 200.0, 20.0, RenderSize::new(300, 80))
+                .map(|element| element.entity()),
+            Some(grown)
         );
     }
 

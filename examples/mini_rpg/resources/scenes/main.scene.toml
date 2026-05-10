@@ -56,3 +56,48 @@ values = ["npc", "character", "solid_actor"]
 
 [entities.data]
 character = "res://data/characters/goblin.toml"
+
+[[entities]]
+id = 900
+name = "HudRoot"
+
+[entities.ui.layout]
+anchor = "top_left"
+offset_x = 16.0
+offset_y = 16.0
+width = 320.0
+height = 72.0
+z_index = 100
+flex_direction = "column"
+gap = 6.0
+padding = 8.0
+
+[[entities]]
+id = 901
+name = "HudTitle"
+
+[entities.ui.layout]
+parent = 900
+width = 304.0
+height = 24.0
+z_index = 101
+
+[entities.ui.text]
+value = "Seishin Mini RPG"
+font_size = 18.0
+color = "#f8f8f8"
+
+[[entities]]
+id = 902
+name = "HudHint"
+
+[entities.ui.layout]
+parent = 900
+width = 304.0
+height = 20.0
+z_index = 101
+
+[entities.ui.text]
+value = "Explore, collide, interact"
+font_size = 14.0
+color = "#d8e8d0"

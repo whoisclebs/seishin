@@ -311,6 +311,9 @@ fn merge_ui_layout(
     let Some(override_value) = override_value else {
         return base;
     };
+    let parent = override_value
+        .parent
+        .or_else(|| base.as_ref().and_then(|layout| layout.parent));
     let anchor = override_value
         .anchor
         .or_else(|| base.as_ref().and_then(|layout| layout.anchor));
@@ -329,20 +332,42 @@ fn merge_ui_layout(
     let z_index = override_value
         .z_index
         .or_else(|| base.as_ref().and_then(|layout| layout.z_index));
+    let flex_direction = override_value
+        .flex_direction
+        .or_else(|| base.as_ref().and_then(|layout| layout.flex_direction));
+    let gap = override_value
+        .gap
+        .or_else(|| base.as_ref().and_then(|layout| layout.gap));
+    let padding = override_value
+        .padding
+        .or_else(|| base.as_ref().and_then(|layout| layout.padding));
+    let grow = override_value
+        .grow
+        .or_else(|| base.as_ref().and_then(|layout| layout.grow));
 
-    (anchor.is_some()
+    (parent.is_some()
+        || anchor.is_some()
         || offset_x.is_some()
         || offset_y.is_some()
         || width.is_some()
         || height.is_some()
-        || z_index.is_some())
+        || z_index.is_some()
+        || flex_direction.is_some()
+        || gap.is_some()
+        || padding.is_some()
+        || grow.is_some())
     .then_some(SceneUiLayoutDocument {
+        parent,
         anchor,
         offset_x,
         offset_y,
         width,
         height,
         z_index,
+        flex_direction,
+        gap,
+        padding,
+        grow,
     })
 }
 
@@ -424,12 +449,17 @@ fn finalize_ui(ui: Option<SceneUiDocument>) -> Option<UiRef> {
 
 fn finalize_ui_layout(layout: SceneUiLayoutDocument) -> UiLayoutRef {
     UiLayoutRef {
+        parent: layout.parent.map(EntityId::new),
         anchor: layout.anchor.unwrap_or_default(),
         offset_x: layout.offset_x.unwrap_or_default(),
         offset_y: layout.offset_y.unwrap_or_default(),
         width: layout.width.unwrap_or_default(),
         height: layout.height.unwrap_or_default(),
         z_index: layout.z_index.unwrap_or_default(),
+        flex_direction: layout.flex_direction.unwrap_or_default(),
+        gap: layout.gap.unwrap_or_default(),
+        padding: layout.padding.unwrap_or_default(),
+        grow: layout.grow.unwrap_or_default(),
     }
 }
 

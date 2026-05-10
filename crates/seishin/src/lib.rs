@@ -31,8 +31,8 @@ pub use seishin_world::{
     SceneReloadError, SceneReloadQueue, SceneReloadReport, SceneReloadRequest, SceneReloadResult,
     SceneReloadUpdate, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
     SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
-    SpriteRef, TagsDocument, UiAnchor, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
-    World, WorldError,
+    SpriteRef, TagsDocument, UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef,
+    UiRef, UiTextRef, World, WorldError,
 };
 pub use tilemap::{
     can_entity_occupy_tilemap, entity_sprite_aabb, intersects_entities_with_tag, TileMapQuery,
@@ -171,8 +171,8 @@ pub mod prelude {
         SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
         SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
         SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
-        SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef,
-        UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
+        SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor,
+        UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     };
 }
 

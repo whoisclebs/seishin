@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::record::{UiAnchor, UiImageRef, UiInteractionRef, UiRef, UiTextRef};
+use crate::record::{UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiRef, UiTextRef};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct SceneDocument {
@@ -139,12 +139,17 @@ impl From<&UiRef> for SceneUiDocument {
     fn from(ui: &UiRef) -> Self {
         Self {
             layout: Some(SceneUiLayoutDocument {
+                parent: ui.layout.parent.map(|entity| entity.raw()),
                 anchor: Some(ui.layout.anchor),
                 offset_x: Some(ui.layout.offset_x),
                 offset_y: Some(ui.layout.offset_y),
                 width: Some(ui.layout.width),
                 height: Some(ui.layout.height),
                 z_index: Some(ui.layout.z_index),
+                flex_direction: Some(ui.layout.flex_direction),
+                gap: Some(ui.layout.gap),
+                padding: Some(ui.layout.padding),
+                grow: Some(ui.layout.grow),
             }),
             text: ui.text.as_ref().map(SceneUiTextDocument::from),
             image: ui.image.as_ref().map(SceneUiImageDocument::from),
@@ -165,6 +170,8 @@ impl From<UiRef> for SceneUiDocument {
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
 pub struct SceneUiLayoutDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor: Option<UiAnchor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset_x: Option<f32>,
@@ -176,6 +183,14 @@ pub struct SceneUiLayoutDocument {
     pub height: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub z_index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flex_direction: Option<UiFlexDirection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub padding: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grow: Option<f32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]

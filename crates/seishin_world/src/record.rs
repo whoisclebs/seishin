@@ -96,25 +96,43 @@ impl UiRef {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiLayoutRef {
+    pub parent: Option<EntityId>,
     pub anchor: UiAnchor,
     pub offset_x: f32,
     pub offset_y: f32,
     pub width: f32,
     pub height: f32,
     pub z_index: i32,
+    pub flex_direction: UiFlexDirection,
+    pub gap: f32,
+    pub padding: f32,
+    pub grow: f32,
 }
 
 impl Default for UiLayoutRef {
     fn default() -> Self {
         Self {
+            parent: None,
             anchor: UiAnchor::TopLeft,
             offset_x: 0.0,
             offset_y: 0.0,
             width: 0.0,
             height: 0.0,
             z_index: 0,
+            flex_direction: UiFlexDirection::Row,
+            gap: 0.0,
+            padding: 0.0,
+            grow: 0.0,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFlexDirection {
+    #[default]
+    Row,
+    Column,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]

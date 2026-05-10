@@ -19,8 +19,8 @@ pub use document::{
 };
 pub use procedural::{ProceduralRng, ProceduralSceneBuilder, ProceduralSeed};
 pub use record::{
-    AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor, UiImageRef,
-    UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
+    AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor,
+    UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
 };
 pub use reload::{
     SceneReloadError, SceneReloadQueue, SceneReloadReport, SceneReloadRequest, SceneReloadResult,
@@ -360,12 +360,17 @@ mod tests {
             name = "StartButton"
 
             [entities.ui.layout]
+            parent = 99
             anchor = "center"
             offset_x = 8.0
             offset_y = 12.0
             width = 180.0
             height = 48.0
             z_index = 5
+            flex_direction = "column"
+            gap = 6.0
+            padding = 4.0
+            grow = 1.0
 
             [entities.ui.text]
             value = "Start"
@@ -384,8 +389,13 @@ mod tests {
         world.load_resolved([resolved]).expect("load ui entity");
 
         let ui = world.ui(EntityId::new(1)).expect("ui component");
+        assert_eq!(ui.layout.parent, Some(EntityId::new(99)));
         assert_eq!(ui.layout.anchor, UiAnchor::Center);
         assert_eq!(ui.layout.width, 180.0);
+        assert_eq!(ui.layout.flex_direction, UiFlexDirection::Column);
+        assert_eq!(ui.layout.gap, 6.0);
+        assert_eq!(ui.layout.padding, 4.0);
+        assert_eq!(ui.layout.grow, 1.0);
         assert_eq!(
             ui.text.as_ref().map(|text| text.value.as_str()),
             Some("Start")
