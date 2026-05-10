@@ -41,9 +41,9 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 ))]
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
-    parse_tile_map, resolve_scene_entity, tile_map_to_scene_entities, CustomComponentRef,
+    parse_tile_map, resolve_scene_entity, tile_map_to_scene_entities, AudioRef, CustomComponentRef,
     EntityRecord, LoadedScene, PrefabDocument, ResolvedEntity, SceneDocument, SceneDocumentExport,
-    SceneEntityDocument, UiAnchor, UiInteractionRef, UiRef, World,
+    SceneEntityDocument, SpriteRef, UiAnchor, UiInteractionRef, UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -945,6 +945,7 @@ impl StartupContext {
             world: self.world,
             render_cache: self.render_cache,
             components: self.components,
+            app_resources: self.app_resources,
             input_actions: self.input_actions,
             resources: Resources::new(self.paths),
             dialogue: DialogueState::default(),
@@ -963,6 +964,7 @@ struct RuntimeParts {
     world: World,
     render_cache: RenderCache,
     components: ComponentRegistry,
+    app_resources: AppResources,
     input_actions: InputActions,
     resources: Resources,
     dialogue: DialogueState,
@@ -1077,6 +1079,92 @@ struct ComponentRegistration {
 pub struct RuntimeComponent {
     entity: Entity,
     component: Box<dyn Component>,
+}
+
+#[derive(Default)]
+pub struct Commands {
+    pending: Vec<Command>,
+}
+
+enum Command {
+    SetPosition {
+        entity: Entity,
+        x: f32,
+        y: f32,
+    },
+    Translate {
+        entity: Entity,
+        x: f32,
+        y: f32,
+    },
+    SetDataRef {
+        entity: Entity,
+        key: String,
+        value: String,
+    },
+    RemoveDataRef {
+        entity: Entity,
+        key: String,
+    },
+}
+
+impl Commands {
+    pub fn set_position(&mut self, entity: Entity, x: f32, y: f32) -> &mut Self {
+        self.pending.push(Command::SetPosition { entity, x, y });
+        self
+    }
+
+    pub fn translate(&mut self, entity: Entity, delta: Vec2) -> &mut Self {
+        self.pending.push(Command::Translate {
+            entity,
+            x: delta.x,
+            y: delta.y,
+        });
+        self
+    }
+
+    pub fn set_data_ref(
+        &mut self,
+        entity: Entity,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> &mut Self {
+        self.pending.push(Command::SetDataRef {
+            entity,
+            key: key.into(),
+            value: value.into(),
+        });
+        self
+    }
+
+    pub fn remove_data_ref(&mut self, entity: Entity, key: impl Into<String>) -> &mut Self {
+        self.pending.push(Command::RemoveDataRef {
+            entity,
+            key: key.into(),
+        });
+        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    fn apply(&mut self, world: &mut World) -> GameResult<()> {
+        for command in std::mem::take(&mut self.pending) {
+            match command {
+                Command::SetPosition { entity, x, y } => world.set_position(entity, x, y)?,
+                Command::Translate { entity, x, y } => world.translate(entity, x, y)?,
+                Command::SetDataRef { entity, key, value } => {
+                    world.set_data_ref(entity, key, value)?;
+                }
+                Command::RemoveDataRef { entity, key } => {
+                    world.remove_data_ref(entity, &key)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -1649,8 +1737,10 @@ pub struct FrameContext<'a> {
     audio: &'a mut AudioSystem,
     audio_cache: &'a AudioCache,
     world: &'a mut World,
+    app_resources: &'a mut AppResources,
     resources: &'a Resources,
     dialogue: &'a mut DialogueState,
+    commands: &'a mut Commands,
     frame: u64,
     delta_seconds: f32,
 }
@@ -1665,6 +1755,22 @@ impl FrameContext<'_> {
 
     pub fn world(&mut self) -> FrameWorld<'_> {
         FrameWorld { world: self.world }
+    }
+
+    pub fn query(&self) -> Query<'_> {
+        Query { world: self.world }
+    }
+
+    pub fn commands(&mut self) -> &mut Commands {
+        self.commands
+    }
+
+    pub fn resource<T: 'static>(&self) -> Option<&T> {
+        self.app_resources.get()
+    }
+
+    pub fn resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.app_resources.get_mut()
     }
 
     pub fn resources(&self) -> &Resources {
@@ -1769,6 +1875,56 @@ impl FrameContext<'_> {
 
     pub fn ui_hit_test(&self, x: f32, y: f32, viewport: RenderSize) -> Option<Entity> {
         ui_hit_test_world(self.world, x, y, viewport).map(|element| element.entity())
+    }
+}
+
+pub struct Query<'a> {
+    world: &'a World,
+}
+
+impl Query<'_> {
+    pub fn entity(&self, entity: Entity) -> Option<&EntityRecord> {
+        self.world.entity(entity)
+    }
+
+    pub fn entity_by_name(&self, name: &str) -> Option<Entity> {
+        self.world.entity_by_name(name)
+    }
+
+    pub fn entities_with_tag(&self, tag: &str) -> Vec<Entity> {
+        self.world.entities_with_tag(tag)
+    }
+
+    pub fn first_with_tag(&self, tag: &str) -> Option<Entity> {
+        self.world.first_with_tag(tag)
+    }
+
+    pub fn tags(&self, entity: Entity) -> Option<&[String]> {
+        self.world.tags(entity)
+    }
+
+    pub fn transform(&self, entity: Entity) -> Option<Transform2D> {
+        self.world.transform(entity)
+    }
+
+    pub fn data_ref(&self, entity: Entity, key: &str) -> Option<&str> {
+        self.world.data_ref(entity, key)
+    }
+
+    pub fn sprite(&self, entity: Entity) -> Option<&SpriteRef> {
+        self.world.sprite(entity)
+    }
+
+    pub fn audio(&self, entity: Entity) -> Option<&AudioRef> {
+        self.world.audio(entity)
+    }
+
+    pub fn ui(&self, entity: Entity) -> Option<&UiRef> {
+        self.world.ui(entity)
+    }
+
+    pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
+        self.world.has_component::<T>(entity)
     }
 }
 
@@ -2191,6 +2347,7 @@ struct Game2DAdapter<G> {
     world: World,
     render_cache: RenderCache,
     components: ComponentRegistry,
+    app_resources: AppResources,
     resources: Resources,
     dialogue: DialogueState,
     component_instances: Vec<RuntimeComponent>,
@@ -2223,6 +2380,7 @@ impl<G: Game2D> Game2DAdapter<G> {
             world: runtime_parts.world,
             render_cache: runtime_parts.render_cache,
             components: runtime_parts.components,
+            app_resources: runtime_parts.app_resources,
             resources: runtime_parts.resources,
             dialogue: runtime_parts.dialogue,
             component_instances: runtime_parts.component_instances,
@@ -2286,42 +2444,52 @@ impl<G: Game2D> Game for Game2DAdapter<G> {
         self.poll_main_scene_hot_reload()
             .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
-        let mut frame = FrameContext {
-            input: &self.input,
-            input_actions: &self.input_actions,
-            audio: &mut self.audio,
-            audio_cache: &self.audio_cache,
-            world: &mut self.world,
-            resources: &self.resources,
-            dialogue: &mut self.dialogue,
-            frame: context.frame,
-            delta_seconds: context.delta_seconds,
-        };
+        let mut commands = Commands::default();
 
-        self.schedule
-            .run_startup_once(&mut frame)
-            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+        {
+            let mut frame = FrameContext {
+                input: &self.input,
+                input_actions: &self.input_actions,
+                audio: &mut self.audio,
+                audio_cache: &self.audio_cache,
+                world: &mut self.world,
+                app_resources: &mut self.app_resources,
+                resources: &self.resources,
+                dialogue: &mut self.dialogue,
+                commands: &mut commands,
+                frame: context.frame,
+                delta_seconds: context.delta_seconds,
+            };
 
-        update_builtin_dialogue_interaction(&mut frame)
-            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+            self.schedule
+                .run_startup_once(&mut frame)
+                .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
-        self.schedule
-            .run_phase(SchedulePhase::Update, &mut frame)
-            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+            update_builtin_dialogue_interaction(&mut frame)
+                .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
-        for runtime_component in &mut self.component_instances {
-            runtime_component
-                .component
-                .update(runtime_component.entity, &mut frame)
+            self.schedule
+                .run_phase(SchedulePhase::Update, &mut frame)
+                .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
+            for runtime_component in &mut self.component_instances {
+                runtime_component
+                    .component
+                    .update(runtime_component.entity, &mut frame)
+                    .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+            }
+
+            self.game
+                .update(&mut frame)
+                .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
+            self.schedule
+                .run_phase(SchedulePhase::PostUpdate, &mut frame)
                 .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
         }
 
-        self.game
-            .update(&mut frame)
-            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
-
-        self.schedule
-            .run_phase(SchedulePhase::PostUpdate, &mut frame)
+        commands
+            .apply(&mut self.world)
             .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
         run_render_frame_graph(
@@ -3396,6 +3564,8 @@ mod tests {
         let input = InputState::default();
         let mut audio = default_audio_system();
         let audio_cache = AudioCache::default();
+        let mut app_resources = AppResources::default();
+        let mut commands = Commands::default();
         let mut dialogue = DialogueState::default();
         let frame = FrameContext {
             input: &input,
@@ -3403,8 +3573,10 @@ mod tests {
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -3893,14 +4065,18 @@ mod tests {
         let mut audio = startup.audio;
         let mut world = startup.world;
         let audio_cache = startup.audio_cache;
+        let mut app_resources = startup.app_resources;
+        let mut commands = Commands::default();
         let mut frame = FrameContext {
             input: &input,
             input_actions: &input_actions,
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -3949,6 +4125,8 @@ mod tests {
         let mut input = InputState::default();
         let mut audio = startup.audio;
         let audio_cache = startup.audio_cache;
+        let mut app_resources = startup.app_resources;
+        let mut commands = Commands::default();
         let player = world.first_with_tag("player").expect("player tag");
         let before = world.transform(player).expect("player transform");
 
@@ -3959,8 +4137,10 @@ mod tests {
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -3993,14 +4173,18 @@ mod tests {
         let input = InputState::default();
         let mut audio = default_audio_system();
         let audio_cache = AudioCache::default();
+        let mut app_resources = AppResources::default();
+        let mut commands = Commands::default();
         let mut frame = FrameContext {
             input: &input,
             input_actions: &input_actions,
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -4033,14 +4217,18 @@ mod tests {
         let input = InputState::default();
         let mut audio = default_audio_system();
         let audio_cache = AudioCache::default();
+        let mut app_resources = AppResources::default();
+        let mut commands = Commands::default();
         let mut frame = FrameContext {
             input: &input,
             input_actions: &input_actions,
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -4114,14 +4302,18 @@ mod tests {
         input.press(KeyCode::Enter);
         let mut audio = default_audio_system();
         let audio_cache = AudioCache::default();
+        let mut app_resources = AppResources::default();
+        let mut commands = Commands::default();
         let frame = FrameContext {
             input: &input,
             input_actions: &input_actions,
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -4146,6 +4338,8 @@ mod tests {
         let input = InputState::default();
         let mut audio = default_audio_system();
         let audio_cache = AudioCache::default();
+        let mut app_resources = AppResources::default();
+        let mut commands = Commands::default();
         let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let mut schedule = Schedule::default();
 
@@ -4184,8 +4378,10 @@ mod tests {
             audio: &mut audio,
             audio_cache: &audio_cache,
             world: &mut world,
+            app_resources: &mut app_resources,
             resources: &resources,
             dialogue: &mut dialogue,
+            commands: &mut commands,
             frame: 1,
             delta_seconds: 1.0,
         };
@@ -4295,6 +4491,130 @@ mod tests {
                 "game",
                 "post_update"
             ]
+        );
+    }
+
+    #[test]
+    fn frame_resource_reads_startup_resource() {
+        #[derive(Debug)]
+        struct Tuning {
+            speed: f32,
+        }
+
+        let root = unique_test_project_root("frame-resource");
+        let asset_root = root.join("assets");
+        let resource_root = root.join("resources");
+        std::fs::create_dir_all(&asset_root).expect("create asset root");
+        std::fs::create_dir_all(&resource_root).expect("create resource root");
+        let paths = ProjectPaths::new(asset_root.clone(), resource_root, root.join("user"));
+        let observed = std::rc::Rc::new(std::cell::Cell::new(0.0));
+        let mut startup = StartupContext::new(
+            AssetRoot::new(&asset_root).expect("asset root"),
+            InputActions::default(),
+            ClearColor::BLACK,
+            paths,
+            None,
+        );
+
+        startup.insert_resource(Tuning { speed: 42.0 });
+        startup
+            .schedule()
+            .add_system(SchedulePhase::Update, "read tuning", {
+                let observed = observed.clone();
+                move |frame| {
+                    observed.set(frame.resource::<Tuning>().expect("tuning").speed);
+                    Ok(())
+                }
+            })
+            .expect("add system");
+
+        let mut adapter =
+            Game2DAdapter::new(NoopGame, startup.into_runtime_parts()).expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+        let frame = engine.tick(1.0).expect("frame");
+
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(observed.get(), 42.0);
+    }
+
+    #[test]
+    fn query_reads_world_without_requiring_mutable_frame_world() {
+        let mut startup = startup_with_scene(
+            "query-transform.scene.toml",
+            r#"
+            [[entities]]
+            id = 7
+            name = "Queryable"
+            transform = { x = 12.0, y = 24.0 }
+            "#,
+        );
+        startup.load_main_scene().expect("load scene");
+        let observed = std::rc::Rc::new(std::cell::Cell::new(Vec2::ZERO));
+
+        startup
+            .schedule()
+            .add_system(SchedulePhase::Update, "read transform", {
+                let observed = observed.clone();
+                move |frame| {
+                    let transform = frame
+                        .query()
+                        .transform(EntityId::new(7))
+                        .expect("transform");
+                    observed.set(Vec2::new(transform.x, transform.y));
+                    Ok(())
+                }
+            })
+            .expect("add system");
+
+        let mut adapter =
+            Game2DAdapter::new(NoopGame, startup.into_runtime_parts()).expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+        let frame = engine.tick(1.0).expect("frame");
+
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(observed.get(), Vec2::new(12.0, 24.0));
+    }
+
+    #[test]
+    fn commands_apply_after_component_update() {
+        #[derive(Default)]
+        struct MoveByCommand;
+
+        impl Component for MoveByCommand {
+            fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()> {
+                context.commands().set_position(entity, 20.0, 30.0);
+                Ok(())
+            }
+        }
+
+        let mut startup = startup_with_scene(
+            "command-apply.scene.toml",
+            r#"
+            [[entities]]
+            id = 8
+            name = "Commanded"
+
+            [[entities.components]]
+            type = "MoveByCommand"
+            "#,
+        );
+        startup
+            .register_component::<MoveByCommand>("MoveByCommand")
+            .expect("register component");
+        startup.load_main_scene().expect("load scene");
+
+        let mut adapter =
+            Game2DAdapter::new(NoopGame, startup.into_runtime_parts()).expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+        let frame = engine.tick(1.0).expect("frame");
+
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(
+            adapter.world.transform(EntityId::new(8)),
+            Some(Transform2D::from_translation(20.0, 30.0))
         );
     }
 
@@ -4795,6 +5115,14 @@ mod tests {
 
     #[derive(Default)]
     struct TestController;
+
+    struct NoopGame;
+
+    impl Game2D for NoopGame {
+        fn new(_context: &mut StartupContext) -> GameResult<Self> {
+            unreachable!("test constructs game directly")
+        }
+    }
 
     impl TestController {
         const DEFAULT_SPEED: f32 = 180.0;
