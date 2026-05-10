@@ -1,0 +1,6 @@
+id = "player"
+display_name = "Hero"
+sprite = "asset://sprites/player.png"
+
+[dialogue]
+default = "res://data/dialogues/player_intro.dialogue.toml"

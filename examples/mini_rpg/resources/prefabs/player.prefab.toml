@@ -1,0 +1,10 @@
+[components]
+name = { value = "player_prefab" }
+
+[components.sprite]
+texture = "asset://sprites/player.png"
+width = 80.0
+height = 80.0
+
+[components.audio]
+sound = "asset://audio/beep.wav"

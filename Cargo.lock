@@ -1706,6 +1706,15 @@ name = "seishin_input"
 version = "0.1.0"
 
 [[package]]
+name = "seishin_mini_rpg"
+version = "0.1.0"
+dependencies = [
+ "seishin",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "seishin_minimal"
 version = "0.1.0"
 dependencies = [

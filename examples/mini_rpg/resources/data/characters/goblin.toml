@@ -1,0 +1,6 @@
+id = "goblin"
+display_name = "Goblin"
+sprite = "asset://sprites/player.png"
+
+[dialogue]
+default = "res://data/dialogues/goblin_intro.dialogue.toml"

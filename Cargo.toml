@@ -13,6 +13,7 @@ members = [
     "crates/seishin_ffi",
     "examples/minimal",
     "examples/basic_2d",
+    "examples/mini_rpg",
     "examples/no_default_wasm",
     "tools/xtask",
 ]

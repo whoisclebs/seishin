@@ -1,0 +1,31 @@
+[game]
+name = "seishin mini rpg"
+main_scene = "res://scenes/main.scene.toml"
+
+[window]
+width = 960
+height = 540
+clear_color = "dark_slate"
+
+[assets]
+root = "assets"
+
+[resources]
+root = "resources"
+
+[user]
+root = "user"
+
+[logging]
+default_filter = "info"
+
+[input.actions.move]
+type = "axis2d"
+left = ["ArrowLeft", "KeyA"]
+right = ["ArrowRight", "KeyD"]
+up = ["ArrowUp", "KeyW"]
+down = ["ArrowDown", "KeyS"]
+
+[input.actions.interact]
+type = "button"
+keys = ["Space", "Enter", "KeyE"]

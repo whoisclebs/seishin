@@ -1,0 +1,6 @@
+id = "merchant"
+display_name = "Mira the Merchant"
+sprite = "asset://sprites/player.png"
+
+[dialogue]
+default = "res://data/dialogues/merchant_intro.dialogue.toml"

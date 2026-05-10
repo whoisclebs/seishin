@@ -1,0 +1,51 @@
+[[entities]]
+id = 1
+name = "Player"
+prefab = "res://prefabs/player.prefab.toml"
+
+[entities.transform]
+x = 640.0
+y = 320.0
+
+[entities.tags]
+values = ["player"]
+
+[entities.data]
+character = "res://data/characters/player.toml"
+
+[[entities]]
+id = 2
+name = "Merchant"
+prefab = "res://prefabs/npc.prefab.toml"
+
+[entities.transform]
+x = 340.0
+y = 200.0
+
+[entities.sprite]
+sort_order = 12
+
+[entities.tags]
+values = ["npc", "character"]
+
+[entities.data]
+character = "res://data/characters/merchant.toml"
+
+[[entities]]
+id = 3
+name = "Goblin"
+prefab = "res://prefabs/goblin.prefab.toml"
+
+[entities.transform]
+x = 740.0
+y = 240.0
+
+[entities.sprite]
+sort_order = 14
+tint = "#9a1a1a"
+
+[entities.tags]
+values = ["npc", "character"]
+
+[entities.data]
+character = "res://data/characters/goblin.toml"
