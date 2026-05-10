@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::any::{Any, TypeId};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
 use std::fmt;
 
@@ -49,6 +50,8 @@ pub enum RenderGraphError {
     DuplicateNode(NodeLabel),
     MissingEdge { from: NodeLabel, to: NodeLabel },
     DuplicateEdge { from: NodeLabel, to: NodeLabel },
+    MissingPass(NodeLabel),
+    DuplicatePass(NodeLabel),
     Cycle,
 }
 
@@ -67,6 +70,12 @@ impl fmt::Display for RenderGraphError {
                     formatter,
                     "render graph edge `{from}` -> `{to}` already exists"
                 )
+            }
+            Self::MissingPass(label) => {
+                write!(formatter, "render graph pass `{label}` is missing")
+            }
+            Self::DuplicatePass(label) => {
+                write!(formatter, "render graph pass `{label}` already exists")
             }
             Self::Cycle => formatter.write_str("render graph contains a cycle"),
         }
@@ -225,11 +234,137 @@ impl RenderGraphRunner {
 
         Ok(())
     }
+
+    pub fn run_passes(
+        &self,
+        graph: &RenderGraph,
+        resources: &mut RenderGraphResources,
+        passes: &mut RenderGraphPasses,
+    ) -> Result<(), RenderGraphError> {
+        for label in graph.execution_order()? {
+            let pass = passes
+                .passes
+                .get_mut(&label)
+                .ok_or_else(|| RenderGraphError::MissingPass(label.clone()))?;
+            pass(RenderGraphContext {
+                label: &label,
+                resources,
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct RenderGraphResources {
+    resources: HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl RenderGraphResources {
+    pub fn insert<T: 'static>(&mut self, resource: T) -> Option<T> {
+        self.resources
+            .insert(TypeId::of::<T>(), Box::new(resource))
+            .and_then(|resource| resource.downcast::<T>().ok())
+            .map(|resource| *resource)
+    }
+
+    pub fn get<T: 'static>(&self) -> Option<&T> {
+        self.resources
+            .get(&TypeId::of::<T>())
+            .and_then(|resource| resource.downcast_ref())
+    }
+
+    pub fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.resources
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|resource| resource.downcast_mut())
+    }
+
+    pub fn remove<T: 'static>(&mut self) -> Option<T> {
+        self.resources
+            .remove(&TypeId::of::<T>())
+            .and_then(|resource| resource.downcast::<T>().ok())
+            .map(|resource| *resource)
+    }
+
+    pub fn contains<T: 'static>(&self) -> bool {
+        self.resources.contains_key(&TypeId::of::<T>())
+    }
+}
+
+impl fmt::Debug for RenderGraphResources {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RenderGraphResources")
+            .field("len", &self.resources.len())
+            .finish()
+    }
+}
+
+pub struct RenderGraphContext<'a> {
+    label: &'a NodeLabel,
+    resources: &'a mut RenderGraphResources,
+}
+
+impl<'a> RenderGraphContext<'a> {
+    pub fn label(&self) -> &NodeLabel {
+        self.label
+    }
+
+    pub fn resources(&self) -> &RenderGraphResources {
+        self.resources
+    }
+
+    pub fn resources_mut(&mut self) -> &mut RenderGraphResources {
+        self.resources
+    }
+}
+
+type RenderGraphPass =
+    Box<dyn for<'context> FnMut(RenderGraphContext<'context>) -> Result<(), RenderGraphError>>;
+
+#[derive(Default)]
+pub struct RenderGraphPasses {
+    passes: BTreeMap<NodeLabel, RenderGraphPass>,
+}
+
+impl RenderGraphPasses {
+    pub fn add(
+        &mut self,
+        label: impl Into<NodeLabel>,
+        pass: impl for<'context> FnMut(RenderGraphContext<'context>) -> Result<(), RenderGraphError>
+            + 'static,
+    ) -> Result<(), RenderGraphError> {
+        let label = label.into();
+        if self.passes.contains_key(&label) {
+            return Err(RenderGraphError::DuplicatePass(label));
+        }
+
+        self.passes.insert(label, Box::new(pass));
+        Ok(())
+    }
+
+    pub fn contains(&self, label: impl Into<NodeLabel>) -> bool {
+        self.passes.contains_key(&label.into())
+    }
+}
+
+impl fmt::Debug for RenderGraphPasses {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RenderGraphPasses")
+            .field("len", &self.passes.len())
+            .finish()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
+    use super::{
+        NodeLabel, RenderGraph, RenderGraphError, RenderGraphPasses, RenderGraphResources,
+        RenderGraphRunner,
+    };
 
     #[test]
     fn execution_order_respects_edges_and_is_deterministic() {
@@ -357,6 +492,66 @@ mod tests {
                 NodeLabel::from("prepare"),
                 NodeLabel::from("draw"),
             ]
+        );
+    }
+
+    #[test]
+    fn runner_executes_registered_passes_with_shared_resources() {
+        let mut graph = RenderGraph::new();
+        graph.add_node("extract").unwrap();
+        graph.add_node("draw").unwrap();
+        graph.add_node_edge("extract", "draw").unwrap();
+        let mut resources = RenderGraphResources::default();
+        resources.insert(Vec::<String>::new());
+        let mut passes = RenderGraphPasses::default();
+
+        passes
+            .add("extract", |mut context| {
+                let label = context.label().to_string();
+                context
+                    .resources_mut()
+                    .get_mut::<Vec<String>>()
+                    .unwrap()
+                    .push(label);
+                Ok(())
+            })
+            .unwrap();
+        passes
+            .add("draw", |mut context| {
+                let label = context.label().to_string();
+                context
+                    .resources_mut()
+                    .get_mut::<Vec<String>>()
+                    .unwrap()
+                    .push(label);
+                Ok(())
+            })
+            .unwrap();
+
+        RenderGraphRunner::new()
+            .run_passes(&graph, &mut resources, &mut passes)
+            .unwrap();
+
+        assert_eq!(
+            resources.get::<Vec<String>>().unwrap(),
+            &vec!["extract".to_string(), "draw".to_string()]
+        );
+    }
+
+    #[test]
+    fn runner_reports_missing_registered_pass() {
+        let mut graph = RenderGraph::new();
+        graph.add_node("draw").unwrap();
+        let mut resources = RenderGraphResources::default();
+        let mut passes = RenderGraphPasses::default();
+
+        let error = RenderGraphRunner::new()
+            .run_passes(&graph, &mut resources, &mut passes)
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            RenderGraphError::MissingPass(NodeLabel::from("draw"))
         );
     }
 }

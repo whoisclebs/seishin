@@ -15,7 +15,10 @@ pub use app::{
     LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
     SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, Vec2, WorldComponentExt,
 };
-pub use seishin_render_graph::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
+pub use seishin_render_graph::{
+    NodeLabel, RenderGraph, RenderGraphContext, RenderGraphError, RenderGraphPasses,
+    RenderGraphResources, RenderGraphRunner,
+};
 pub use seishin_world::{
     AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
     LoadedScene, PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange,
@@ -120,7 +123,10 @@ pub mod prelude {
         Camera2D, ClearColor, RenderError, RenderSize, RenderState, Sprite, SpriteBatch,
         SpriteMaterial, SpriteTint, TextureData, TextureId,
     };
-    pub use seishin_render_graph::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
+    pub use seishin_render_graph::{
+        NodeLabel, RenderGraph, RenderGraphContext, RenderGraphError, RenderGraphPasses,
+        RenderGraphResources, RenderGraphRunner,
+    };
     #[cfg(any(
         all(not(target_arch = "wasm32"), feature = "desktop"),
         all(target_arch = "wasm32", feature = "web")
