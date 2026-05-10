@@ -225,31 +225,77 @@ impl ResourceFileSignature {
 #[derive(Debug, Clone)]
 struct SceneHotReloadState {
     loaded_scene: LoadedScene,
+    signatures: Vec<ResourceDependencySignature>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResourceDependencySignature {
+    path: String,
     signature: ResourceFileSignature,
+}
+
+struct SceneHotReloadCandidate {
+    scene: SceneDocument,
+    signatures: Vec<ResourceDependencySignature>,
 }
 
 impl SceneHotReloadState {
     fn new(resources: &Resources, loaded_scene: LoadedScene) -> GameResult<Self> {
-        let signature = ResourceFileSignature::read(loaded_scene.source(), &resources.paths)?;
+        let scene = load_scene_config(loaded_scene.source(), &resources.paths)?;
+        let signatures =
+            scene_hot_reload_signatures(loaded_scene.source(), &scene, &resources.paths)?;
 
         Ok(Self {
             loaded_scene,
-            signature,
+            signatures,
         })
     }
 
-    fn poll(&mut self, resources: &Resources) -> GameResult<Option<SceneDocument>> {
-        let next_signature =
-            ResourceFileSignature::read(self.loaded_scene.source(), &resources.paths)?;
+    fn poll(&self, resources: &Resources) -> GameResult<Option<SceneHotReloadCandidate>> {
+        let scene = load_scene_config(self.loaded_scene.source(), &resources.paths)?;
+        let signatures =
+            scene_hot_reload_signatures(self.loaded_scene.source(), &scene, &resources.paths)?;
 
-        if next_signature == self.signature {
+        if signatures == self.signatures {
             return Ok(None);
         }
 
-        let scene = load_scene_config(self.loaded_scene.source(), &resources.paths)?;
-        self.signature = next_signature;
+        Ok(Some(SceneHotReloadCandidate { scene, signatures }))
+    }
+}
 
-        Ok(Some(scene))
+fn scene_hot_reload_signatures(
+    scene_source: &str,
+    scene: &SceneDocument,
+    paths: &ProjectPaths,
+) -> GameResult<Vec<ResourceDependencySignature>> {
+    let mut dependencies = vec![scene_source.to_string()];
+
+    for scene_map in &scene.maps {
+        push_unique_dependency(&mut dependencies, &scene_map.source);
+    }
+
+    for entity in &scene.entities {
+        if let Some(prefab) = entity.prefab.as_deref() {
+            push_unique_dependency(&mut dependencies, prefab);
+        }
+    }
+
+    dependencies.sort();
+    dependencies
+        .into_iter()
+        .map(|path| {
+            Ok(ResourceDependencySignature {
+                signature: ResourceFileSignature::read(&path, paths)?,
+                path,
+            })
+        })
+        .collect()
+}
+
+fn push_unique_dependency(dependencies: &mut Vec<String>, path: &str) {
+    if !dependencies.iter().any(|dependency| dependency == path) {
+        dependencies.push(path.to_string());
     }
 }
 
@@ -2477,13 +2523,19 @@ impl<G: Game2D> Game2DAdapter<G> {
         let Some(state) = &mut self.main_scene_hot_reload else {
             return Ok(());
         };
-        let Some(scene) = state.poll(&self.resources)? else {
-            return Ok(());
+        let candidate = match state.poll(&self.resources) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => return Ok(()),
+            Err(_error) => {
+                #[cfg(feature = "logging")]
+                warn!(error = %_error, "hot reload skipped invalid scene dependencies");
+                return Ok(());
+            }
         };
 
-        let prepared = prepare_scene_document(
+        let prepared = match prepare_scene_document(
             state.loaded_scene.source(),
-            scene,
+            candidate.scene,
             ScenePreparation {
                 replace_scene: Some(&state.loaded_scene),
                 world: &self.world,
@@ -2492,17 +2544,33 @@ impl<G: Game2D> Game2DAdapter<G> {
                 audio: &mut self.audio,
                 registry: &self.components,
             },
-        )?;
-        let loaded_scene = apply_prepared_scene(
+        ) {
+            Ok(prepared) => prepared,
+            Err(_error) => {
+                #[cfg(feature = "logging")]
+                warn!(error = %_error, "hot reload skipped invalid scene update");
+                return Ok(());
+            }
+        };
+
+        let loaded_scene = match apply_prepared_scene(
             prepared,
             Some(&state.loaded_scene),
             &mut self.world,
             &mut self.render_cache,
             &mut self.audio_cache,
             &mut self.component_instances,
-        )?;
+        ) {
+            Ok(loaded_scene) => loaded_scene,
+            Err(_error) => {
+                #[cfg(feature = "logging")]
+                warn!(error = %_error, "hot reload failed to apply scene update");
+                return Ok(());
+            }
+        };
 
         state.loaded_scene = loaded_scene;
+        state.signatures = candidate.signatures;
         Ok(())
     }
 }
@@ -4948,6 +5016,207 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn runtime_hot_reloads_changed_prefab_dependency() {
+        let mut startup = startup_with_scene(
+            "hot-reload-prefab.scene.toml",
+            r#"
+            [[entities]]
+            id = 7
+            prefab = "res://prefabs/hot-reload.prefab.toml"
+            "#,
+        );
+        write_resource(
+            &startup.paths,
+            "prefabs/hot-reload.prefab.toml",
+            r#"
+            [components.name]
+            value = "PrefabOld"
+            "#,
+        );
+        startup.load_main_scene().expect("load initial scene");
+        let paths = startup.paths.clone();
+        let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        type ObservedEntities =
+            std::rc::Rc<std::cell::RefCell<Vec<(Option<Entity>, Option<Entity>)>>>;
+
+        struct PrefabReloadGame {
+            observed: ObservedEntities,
+        }
+
+        impl Game2D for PrefabReloadGame {
+            fn new(_context: &mut StartupContext) -> GameResult<Self> {
+                unreachable!("test constructs game directly")
+            }
+
+            fn update(&mut self, context: &mut FrameContext<'_>) -> GameResult<()> {
+                let world = context.world();
+                self.observed.borrow_mut().push((
+                    world.entity_by_name("PrefabNew"),
+                    world.entity_by_name("PrefabOld"),
+                ));
+                Ok(())
+            }
+        }
+
+        let mut adapter = Game2DAdapter::new(
+            PrefabReloadGame {
+                observed: observed.clone(),
+            },
+            startup.into_runtime_parts(),
+        )
+        .expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+
+        write_resource(
+            &paths,
+            "prefabs/hot-reload.prefab.toml",
+            r#"
+            [components.name]
+            value = "PrefabNew"
+            "#,
+        );
+
+        let frame = engine.tick(1.0).expect("frame");
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(
+            observed.borrow().as_slice(),
+            [(Some(EntityId::new(7)), None)]
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn runtime_hot_reloads_changed_map_dependency() {
+        let mut startup = startup_with_scene(
+            "hot-reload-map.scene.toml",
+            r#"
+            [[maps]]
+            source = "res://data/maps/hot-reload.map"
+            "#,
+        );
+        write_resource(
+            &startup.paths,
+            "data/maps/hot-reload.map",
+            r#"
+            tile_size = 16.0
+
+            [legend.0]
+            name = "open"
+            collision = "none"
+
+            [tiles]
+            rows = [[0]]
+            "#,
+        );
+        startup.load_main_scene().expect("load initial scene");
+        let paths = startup.paths.clone();
+        let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+
+        struct MapReloadGame {
+            observed: std::rc::Rc<std::cell::RefCell<Vec<Option<String>>>>,
+        }
+
+        impl Game2D for MapReloadGame {
+            fn new(_context: &mut StartupContext) -> GameResult<Self> {
+                unreachable!("test constructs game directly")
+            }
+
+            fn update(&mut self, context: &mut FrameContext<'_>) -> GameResult<()> {
+                let world = context.world();
+                let width = world
+                    .first_with_tag("tilemap")
+                    .and_then(|entity| world.data_ref(entity, "width"))
+                    .map(ToOwned::to_owned);
+
+                self.observed.borrow_mut().push(width);
+                Ok(())
+            }
+        }
+
+        let mut adapter = Game2DAdapter::new(
+            MapReloadGame {
+                observed: observed.clone(),
+            },
+            startup.into_runtime_parts(),
+        )
+        .expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+
+        write_resource(
+            &paths,
+            "data/maps/hot-reload.map",
+            r#"
+            tile_size = 16.0
+
+            [legend.0]
+            name = "open"
+            collision = "none"
+
+            [tiles]
+            rows = [[0, 0]]
+            "#,
+        );
+
+        let frame = engine.tick(1.0).expect("frame");
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(observed.borrow().as_slice(), [Some("2".to_string())]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn invalid_hot_reload_keeps_previous_world() {
+        let mut startup = startup_with_scene(
+            "hot-reload-invalid.scene.toml",
+            r#"
+            [[entities]]
+            id = 1
+            name = "Stable"
+            "#,
+        );
+        startup.load_main_scene().expect("load initial scene");
+        let paths = startup.paths.clone();
+
+        struct InvalidReloadGame;
+
+        impl Game2D for InvalidReloadGame {
+            fn new(_context: &mut StartupContext) -> GameResult<Self> {
+                unreachable!("test constructs game directly")
+            }
+        }
+
+        let mut adapter =
+            Game2DAdapter::new(InvalidReloadGame, startup.into_runtime_parts()).expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+
+        write_scene(
+            &paths,
+            "hot-reload-invalid.scene.toml",
+            r#"
+            [[entities]]
+            id = 1
+            name = "Broken"
+
+            [[entities]]
+            id = 1
+            name = "Duplicate"
+            "#,
+        );
+
+        let frame = engine.tick(1.0).expect("frame");
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(
+            adapter.world.entity_by_name("Stable"),
+            Some(EntityId::new(1))
+        );
+        assert_eq!(adapter.world.entity_by_name("Broken"), None);
+        assert_eq!(adapter.world.entity_by_name("Duplicate"), None);
+    }
+
     #[test]
     fn scene_component_config_is_passed_to_registered_factory() {
         LAST_CONFIG_SPEED_BITS.store(0, std::sync::atomic::Ordering::SeqCst);
@@ -5562,6 +5831,13 @@ mod tests {
     fn write_scene(paths: &ProjectPaths, scene_name: &str, scene: &str) {
         let path = paths.resource_root.join("scenes").join(scene_name);
         std::fs::write(path, scene).expect("write scene");
+    }
+
+    fn write_resource(paths: &ProjectPaths, relative_path: &str, contents: &str) {
+        let path = paths.resource_root.join(relative_path);
+        std::fs::create_dir_all(path.parent().expect("resource parent"))
+            .expect("create resource parent");
+        std::fs::write(path, contents).expect("write resource");
     }
 
     fn apply_commands_for_startup(
