@@ -452,6 +452,7 @@ pub struct StartupContext {
     render_cache: RenderCache,
     components: ComponentRegistry,
     component_instances: Vec<RuntimeComponent>,
+    schedule: Schedule,
     paths: ProjectPaths,
     main_scene: Option<String>,
     main_scene_loaded: bool,
@@ -475,6 +476,7 @@ impl StartupContext {
             render_cache: RenderCache::default(),
             components: ComponentRegistry::default(),
             component_instances: Vec::new(),
+            schedule: Schedule::default(),
             paths,
             main_scene,
             main_scene_loaded: false,
@@ -493,6 +495,10 @@ impl StartupContext {
 
     pub fn components(&mut self) -> &mut ComponentRegistry {
         &mut self.components
+    }
+
+    pub fn schedule(&mut self) -> &mut Schedule {
+        &mut self.schedule
     }
 
     pub fn load_main_scene(&mut self) -> GameResult<()> {
@@ -550,6 +556,7 @@ impl StartupContext {
             resources: Resources::new(self.paths),
             dialogue: DialogueState::default(),
             component_instances: self.component_instances,
+            schedule: self.schedule,
             clear_color: self.clear_color,
         }
     }
@@ -564,11 +571,103 @@ struct RuntimeParts {
     resources: Resources,
     dialogue: DialogueState,
     component_instances: Vec<RuntimeComponent>,
+    schedule: Schedule,
     clear_color: ClearColor,
 }
 
 pub trait Component {
     fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SchedulePhase {
+    Startup,
+    Update,
+    PostUpdate,
+}
+
+type ScheduleSystem =
+    Box<dyn for<'frame> FnMut(&mut FrameContext<'frame>) -> GameResult<()> + 'static>;
+
+struct ScheduleSystemRegistration {
+    name: String,
+    system: ScheduleSystem,
+}
+
+#[derive(Default)]
+pub struct Schedule {
+    startup_complete: bool,
+    startup: Vec<ScheduleSystemRegistration>,
+    update: Vec<ScheduleSystemRegistration>,
+    post_update: Vec<ScheduleSystemRegistration>,
+}
+
+impl Schedule {
+    pub fn add_system(
+        &mut self,
+        phase: SchedulePhase,
+        name: impl Into<String>,
+        system: impl for<'frame> FnMut(&mut FrameContext<'frame>) -> GameResult<()> + 'static,
+    ) -> GameResult<()> {
+        let name = name.into();
+
+        if name.trim().is_empty() {
+            return Err("schedule system name must not be empty".into());
+        }
+
+        self.systems_mut(phase).push(ScheduleSystemRegistration {
+            name,
+            system: Box::new(system),
+        });
+        Ok(())
+    }
+
+    pub fn run_startup_once(&mut self, context: &mut FrameContext<'_>) -> GameResult<()> {
+        if self.startup_complete {
+            return Ok(());
+        }
+
+        self.run_phase(SchedulePhase::Startup, context)?;
+        self.startup_complete = true;
+        Ok(())
+    }
+
+    pub fn run_phase(
+        &mut self,
+        phase: SchedulePhase,
+        context: &mut FrameContext<'_>,
+    ) -> GameResult<()> {
+        for registration in self.systems_mut(phase) {
+            (registration.system)(context).map_err(|error| -> Box<dyn Error> {
+                format!("schedule system '{}' failed: {error}", registration.name).into()
+            })?;
+        }
+
+        Ok(())
+    }
+
+    pub fn system_names(&self, phase: SchedulePhase) -> Vec<&str> {
+        self.systems(phase)
+            .iter()
+            .map(|registration| registration.name.as_str())
+            .collect()
+    }
+
+    fn systems(&self, phase: SchedulePhase) -> &[ScheduleSystemRegistration] {
+        match phase {
+            SchedulePhase::Startup => &self.startup,
+            SchedulePhase::Update => &self.update,
+            SchedulePhase::PostUpdate => &self.post_update,
+        }
+    }
+
+    fn systems_mut(&mut self, phase: SchedulePhase) -> &mut Vec<ScheduleSystemRegistration> {
+        match phase {
+            SchedulePhase::Startup => &mut self.startup,
+            SchedulePhase::Update => &mut self.update,
+            SchedulePhase::PostUpdate => &mut self.post_update,
+        }
+    }
 }
 
 pub type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component>>;
@@ -1399,6 +1498,7 @@ struct Game2DAdapter<G> {
     resources: Resources,
     dialogue: DialogueState,
     component_instances: Vec<RuntimeComponent>,
+    schedule: Schedule,
     render: RenderContext,
     frame_graph: RenderGraph,
 }
@@ -1423,6 +1523,7 @@ impl<G: Game2D> Game2DAdapter<G> {
             resources: runtime_parts.resources,
             dialogue: runtime_parts.dialogue,
             component_instances: runtime_parts.component_instances,
+            schedule: runtime_parts.schedule,
             render,
             frame_graph: default_frame_render_graph(),
         }
@@ -1457,7 +1558,15 @@ impl<G: Game2D> Game for Game2DAdapter<G> {
             delta_seconds: context.delta_seconds,
         };
 
+        self.schedule
+            .run_startup_once(&mut frame)
+            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
         update_builtin_dialogue_interaction(&mut frame)
+            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
+        self.schedule
+            .run_phase(SchedulePhase::Update, &mut frame)
             .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
         for runtime_component in &mut self.component_instances {
@@ -1469,6 +1578,10 @@ impl<G: Game2D> Game for Game2DAdapter<G> {
 
         self.game
             .update(&mut frame)
+            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
+        self.schedule
+            .run_phase(SchedulePhase::PostUpdate, &mut frame)
             .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
         run_render_frame_graph(
@@ -2782,6 +2895,170 @@ mod tests {
         assert!(!frame.ui_action_just_released(button));
         assert!(!frame.ui_action_pressed(disabled));
         assert!(!frame.ui_action_pressed(EntityId::new(999)));
+    }
+
+    #[test]
+    fn schedule_runs_startup_once_and_frame_phases_in_order() {
+        let resources = Resources::new(ProjectPaths::new(
+            PathBuf::from("/project/assets"),
+            PathBuf::from("/project/resources"),
+            PathBuf::from("/user/seishin"),
+        ));
+        let mut dialogue = DialogueState::default();
+        let mut world = World::default();
+        let input_actions = InputActions::default();
+        let input = InputState::default();
+        let mut audio = default_audio_system();
+        let audio_cache = AudioCache::default();
+        let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut schedule = Schedule::default();
+
+        schedule
+            .add_system(SchedulePhase::Startup, "startup", {
+                let calls = calls.clone();
+                move |_frame| {
+                    calls.borrow_mut().push("startup");
+                    Ok(())
+                }
+            })
+            .expect("add startup system");
+        schedule
+            .add_system(SchedulePhase::Update, "update", {
+                let calls = calls.clone();
+                move |frame| {
+                    assert_eq!(frame.frame(), 1);
+                    calls.borrow_mut().push("update");
+                    Ok(())
+                }
+            })
+            .expect("add update system");
+        schedule
+            .add_system(SchedulePhase::PostUpdate, "post_update", {
+                let calls = calls.clone();
+                move |_frame| {
+                    calls.borrow_mut().push("post_update");
+                    Ok(())
+                }
+            })
+            .expect("add post update system");
+
+        let mut frame = FrameContext {
+            input: &input,
+            input_actions: &input_actions,
+            audio: &mut audio,
+            audio_cache: &audio_cache,
+            world: &mut world,
+            resources: &resources,
+            dialogue: &mut dialogue,
+            frame: 1,
+            delta_seconds: 1.0,
+        };
+
+        schedule.run_startup_once(&mut frame).expect("startup");
+        schedule
+            .run_phase(SchedulePhase::Update, &mut frame)
+            .expect("update");
+        schedule
+            .run_phase(SchedulePhase::PostUpdate, &mut frame)
+            .expect("post update");
+        schedule
+            .run_startup_once(&mut frame)
+            .expect("startup already complete");
+
+        assert_eq!(
+            calls.borrow().as_slice(),
+            ["startup", "update", "post_update"]
+        );
+    }
+
+    #[test]
+    fn runtime_executes_registered_schedule_around_game_update() {
+        let root = unique_test_project_root("runtime-schedule");
+        let asset_root = root.join("assets");
+        let resource_root = root.join("resources");
+        std::fs::create_dir_all(&asset_root).expect("create asset root");
+        std::fs::create_dir_all(&resource_root).expect("create resource root");
+        let paths = ProjectPaths::new(asset_root.clone(), resource_root, root.join("user"));
+        let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut startup = StartupContext::new(
+            AssetRoot::new(&asset_root).expect("asset root"),
+            InputActions::default(),
+            ClearColor::BLACK,
+            paths,
+            None,
+        );
+
+        startup
+            .schedule()
+            .add_system(SchedulePhase::Startup, "startup", {
+                let calls = calls.clone();
+                move |_frame| {
+                    calls.borrow_mut().push("startup");
+                    Ok(())
+                }
+            })
+            .expect("add startup system");
+        startup
+            .schedule()
+            .add_system(SchedulePhase::Update, "update", {
+                let calls = calls.clone();
+                move |_frame| {
+                    calls.borrow_mut().push("update");
+                    Ok(())
+                }
+            })
+            .expect("add update system");
+        startup
+            .schedule()
+            .add_system(SchedulePhase::PostUpdate, "post_update", {
+                let calls = calls.clone();
+                move |_frame| {
+                    calls.borrow_mut().push("post_update");
+                    Ok(())
+                }
+            })
+            .expect("add post update system");
+
+        struct ScheduledGame {
+            calls: std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>,
+        }
+
+        impl Game2D for ScheduledGame {
+            fn new(_context: &mut StartupContext) -> GameResult<Self> {
+                unreachable!("test constructs game directly")
+            }
+
+            fn update(&mut self, _context: &mut FrameContext<'_>) -> GameResult<()> {
+                self.calls.borrow_mut().push("game");
+                Ok(())
+            }
+        }
+
+        let mut adapter = Game2DAdapter::new(
+            ScheduledGame {
+                calls: calls.clone(),
+            },
+            startup.into_runtime_parts(),
+        );
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+
+        let first = engine.tick(1.0).expect("first frame");
+        adapter.update(&mut engine, first).expect("first update");
+        let second = engine.tick(1.0).expect("second frame");
+        adapter.update(&mut engine, second).expect("second update");
+
+        assert_eq!(
+            calls.borrow().as_slice(),
+            [
+                "startup",
+                "update",
+                "game",
+                "post_update",
+                "update",
+                "game",
+                "post_update"
+            ]
+        );
     }
 
     #[test]

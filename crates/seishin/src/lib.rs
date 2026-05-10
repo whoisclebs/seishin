@@ -12,8 +12,8 @@ pub use app::{
     run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
     ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
     FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
-    LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle, SpriteRenderer,
-    StartupContext, Texture, UiElement, Vec2, WorldComponentExt,
+    LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
+    SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, Vec2, WorldComponentExt,
 };
 pub use seishin_render_graph::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
 pub use seishin_world::{
@@ -104,9 +104,9 @@ pub mod prelude {
         run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
         ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
         FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
-        LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle,
-        SpriteRenderer, StartupContext, Texture, UiElement, Vec2, World, WorldComponentExt,
-        WorldError,
+        LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
+        SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, Vec2, World,
+        WorldComponentExt, WorldError,
     };
     pub use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{AudioSkipReason, AudioSystem, PlaybackResult, SoundAsset};
