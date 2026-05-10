@@ -567,11 +567,11 @@ struct RuntimeParts {
     clear_color: ClearColor,
 }
 
-pub trait Component2D {
+pub trait Component {
     fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()>;
 }
 
-pub type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component2D>>;
+pub type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component>>;
 
 #[derive(Clone, Copy)]
 struct ComponentRegistration {
@@ -581,7 +581,7 @@ struct ComponentRegistration {
 
 pub struct RuntimeComponent {
     entity: Entity,
-    component: Box<dyn Component2D>,
+    component: Box<dyn Component>,
 }
 
 #[derive(Clone, Default)]
@@ -590,7 +590,7 @@ pub struct ComponentRegistry {
 }
 
 impl ComponentRegistry {
-    pub fn register<T: Component2D + Default + 'static>(
+    pub fn register<T: Component + Default + 'static>(
         &mut self,
         name: impl Into<String>,
     ) -> GameResult<()> {
@@ -641,7 +641,7 @@ impl ComponentRegistry {
             .and_then(|registration| registration.type_id)
     }
 
-    fn instantiate(&self, component: &CustomComponentRef) -> GameResult<Box<dyn Component2D>> {
+    fn instantiate(&self, component: &CustomComponentRef) -> GameResult<Box<dyn Component>> {
         let Some(registration) = self.registrations.get(&component.type_name) else {
             return Err(format!("unknown component type '{}'", component.type_name).into());
         };
@@ -814,7 +814,7 @@ pub trait WorldComponentExt {
     fn first_interactable(&self) -> Option<Entity>;
     fn has_custom_component(&self, entity: Entity, type_name: &str) -> bool;
     fn custom_component_config(&self, entity: Entity, type_name: &str) -> Option<&toml::Value>;
-    fn has_component<T: Component2D + 'static>(&self, entity: Entity) -> bool;
+    fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool;
 }
 
 impl WorldComponentExt for World {
@@ -841,7 +841,7 @@ impl WorldComponentExt for World {
         })
     }
 
-    fn has_component<T: Component2D + 'static>(&self, entity: Entity) -> bool {
+    fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
         self.has_component_type_id(entity, TypeId::of::<T>())
     }
 }
@@ -2968,6 +2968,26 @@ mod tests {
             .contains("unknown component type 'PlayerController'"));
     }
 
+    #[test]
+    fn public_component_trait_name_is_backend_agnostic() {
+        fn assert_component<T: Component>() {}
+
+        #[derive(Default)]
+        struct BackendAgnosticComponent;
+
+        impl Component for BackendAgnosticComponent {
+            fn update(
+                &mut self,
+                _entity: Entity,
+                _context: &mut FrameContext<'_>,
+            ) -> GameResult<()> {
+                Ok(())
+            }
+        }
+
+        assert_component::<BackendAgnosticComponent>();
+    }
+
     #[derive(Default)]
     struct TestController;
 
@@ -2975,7 +2995,7 @@ mod tests {
         const DEFAULT_SPEED: f32 = 180.0;
     }
 
-    impl Component2D for TestController {
+    impl Component for TestController {
         fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()> {
             context.world().translate(entity, Vec2::new(1.0, 0.0));
             Ok(())
@@ -2985,9 +3005,7 @@ mod tests {
     static LAST_CONFIG_SPEED_BITS: std::sync::atomic::AtomicU32 =
         std::sync::atomic::AtomicU32::new(0);
 
-    fn configured_test_controller_factory(
-        config: &toml::Value,
-    ) -> GameResult<Box<dyn Component2D>> {
+    fn configured_test_controller_factory(config: &toml::Value) -> GameResult<Box<dyn Component>> {
         let speed = config
             .get("speed")
             .and_then(toml::Value::as_float)

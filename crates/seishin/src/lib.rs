@@ -9,7 +9,7 @@ pub use seishin_assets::preload_web_assets;
 pub use wasm_bindgen_futures::spawn_local;
 
 pub use app::{
-    run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component2D,
+    run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
     ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
     FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
     LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle, SpriteRenderer,
@@ -101,7 +101,7 @@ pub mod world {
 
 pub mod prelude {
     pub use crate::{
-        run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component2D,
+        run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
         ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
         FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
         LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle,

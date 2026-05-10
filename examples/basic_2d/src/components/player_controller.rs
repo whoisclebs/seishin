@@ -17,7 +17,7 @@ impl PlayerController {
     }
 }
 
-impl Component2D for PlayerController {
+impl Component for PlayerController {
     fn update(&mut self, entity: Entity, ctx: &mut FrameContext<'_>) -> GameResult<()> {
         let speed = self.speed();
         let movement = ctx.input().axis2d("move");
