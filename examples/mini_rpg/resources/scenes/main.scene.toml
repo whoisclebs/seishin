@@ -1,10 +1,21 @@
+[[maps]]
+source = "res://data/maps/overworld.map"
+tile_size = 48.0
+
+[[entities]]
+name = "World"
+prefab = "res://prefabs/world_controller.prefab.toml"
+
+[entities.tags]
+values = ["system"]
+
 [[entities]]
 name = "Player"
 prefab = "res://prefabs/player.prefab.toml"
 
 [entities.transform]
-x = 640.0
-y = 320.0
+x = 96.0
+y = 96.0
 
 [entities.tags]
 values = ["player"]
@@ -17,8 +28,8 @@ name = "Merchant"
 prefab = "res://prefabs/npc.prefab.toml"
 
 [entities.transform]
-x = 340.0
-y = 200.0
+x = 720.0
+y = 288.0
 
 [entities.sprite]
 sort_order = 12
@@ -34,12 +45,11 @@ name = "Goblin"
 prefab = "res://prefabs/goblin.prefab.toml"
 
 [entities.transform]
-x = 740.0
-y = 240.0
+x = 816.0
+y = 96.0
 
 [entities.sprite]
 sort_order = 14
-tint = "#9a1a1a"
 
 [entities.tags]
 values = ["npc", "character"]

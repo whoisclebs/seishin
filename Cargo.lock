@@ -1710,6 +1710,7 @@ name = "seishin_mini_rpg"
 version = "0.1.0"
 dependencies = [
  "seishin",
+ "toml",
  "wasm-bindgen",
  "web-sys",
 ]

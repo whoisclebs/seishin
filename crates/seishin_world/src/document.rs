@@ -7,6 +7,8 @@ use crate::record::{UiAnchor, UiImageRef, UiInteractionRef, UiRef, UiTextRef};
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct SceneDocument {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub maps: Vec<SceneMapDocument>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<SceneEntityDocument>,
 }
 
@@ -44,6 +46,13 @@ pub struct SceneEntityDocument {
     pub ui: Option<SceneUiDocument>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<CustomComponentDocument>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub struct SceneMapDocument {
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_size: Option<f32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]

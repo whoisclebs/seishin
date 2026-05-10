@@ -1,0 +1,5 @@
+[components]
+name = { value = "world_controller" }
+
+[components.bootstrap]
+type = "MapBootstrap"

@@ -37,6 +37,7 @@ impl SceneDocumentBuilder {
 
     pub fn build(self) -> SceneDocument {
         SceneDocument {
+            maps: Vec::new(),
             entities: self.entities,
         }
     }

@@ -2,9 +2,9 @@
 name = { value = "goblin_prefab" }
 
 [components.sprite]
-texture = "asset://sprites/player.png"
-width = 80.0
-height = 80.0
+texture = "asset://sprites/enemy.png"
+width = 48.0
+height = 48.0
 
 [components.controller]
 type = "WandererController"

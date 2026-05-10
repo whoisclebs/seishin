@@ -67,7 +67,10 @@ pub fn scene_document_from_records<'a>(
         .collect();
 
     SceneDocumentExport {
-        document: SceneDocument { entities },
+        document: SceneDocument {
+            maps: Vec::new(),
+            entities,
+        },
         omissions,
     }
 }
@@ -98,7 +101,10 @@ pub fn scene_document_export_from_resolved_entities(
         .collect();
 
     SceneDocumentExport {
-        document: SceneDocument { entities },
+        document: SceneDocument {
+            maps: Vec::new(),
+            entities,
+        },
         omissions,
     }
 }

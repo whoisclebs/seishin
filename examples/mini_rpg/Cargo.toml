@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 seishin = { workspace = true, features = ["desktop", "web", "render-wgpu", "audio-kira", "png", "logging"] }
+toml = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

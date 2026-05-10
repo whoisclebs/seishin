@@ -26,6 +26,7 @@ right = ["ArrowRight", "KeyD"]
 up = ["ArrowUp", "KeyW"]
 down = ["ArrowDown", "KeyS"]
 
-[input.actions.interact]
+[input.actions.interact_rpg]
 type = "button"
 keys = ["Space", "Enter", "KeyE"]
+

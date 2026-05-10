@@ -7,12 +7,12 @@
 )]
 
 use std::{
-    any::TypeId,
+    any::{Any, TypeId},
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     error::Error,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    sync::Once,
+    sync::{Arc, Mutex, Once},
 };
 
 use crate::platform;
@@ -41,9 +41,9 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 ))]
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
-    resolve_scene_entity, CustomComponentRef, EntityRecord, LoadedScene, PrefabDocument,
-    ResolvedEntity, SceneDocument, SceneDocumentExport, SceneEntityDocument, UiAnchor,
-    UiInteractionRef, UiRef, World,
+    parse_tile_map, resolve_scene_entity, tile_map_to_scene_entities, CustomComponentRef,
+    EntityRecord, LoadedScene, PrefabDocument, ResolvedEntity, SceneDocument, SceneDocumentExport,
+    SceneEntityDocument, UiAnchor, UiInteractionRef, UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -314,6 +314,33 @@ pub struct App {
     input_actions: InputActions,
 }
 
+pub trait Plugin {
+    fn build(&self, app: &mut StartupContext) -> GameResult<()>;
+}
+
+impl<F> Plugin for F
+where
+    F: Fn(&mut StartupContext) -> GameResult<()> + 'static,
+{
+    fn build(&self, app: &mut StartupContext) -> GameResult<()> {
+        self(app)
+    }
+}
+
+pub trait ComponentDefinition {
+    fn build(&self, app: &mut StartupContext) -> GameResult<()>;
+}
+
+pub struct AppBuilder {
+    app: App,
+    plugins: Vec<Box<dyn Plugin>>,
+    components: Vec<Box<dyn ComponentDefinition>>,
+}
+
+pub struct ComponentAppBuilder {
+    builder: AppBuilder,
+}
+
 impl App {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
@@ -380,49 +407,33 @@ impl App {
         self
     }
 
+    pub fn add_plugin<P: Plugin + 'static>(self, plugin: P) -> AppBuilder {
+        AppBuilder {
+            app: self,
+            plugins: vec![Box::new(plugin)],
+            components: Vec::new(),
+        }
+    }
+
+    pub fn add_component<C: ComponentDefinition + 'static>(
+        self,
+        component: C,
+    ) -> ComponentAppBuilder {
+        ComponentAppBuilder {
+            builder: AppBuilder {
+                app: self,
+                plugins: Vec::new(),
+                components: vec![Box::new(component)],
+            },
+        }
+    }
+
     #[cfg(any(
         all(not(target_arch = "wasm32"), feature = "desktop"),
         all(target_arch = "wasm32", feature = "web")
     ))]
     pub fn run<G: Game2D>(self) -> GameResult<()> {
-        self.logging.install();
-
-        let paths = ProjectPaths::new(self.asset_root, self.resource_root, self.user_root);
-        let _user_root = paths.user_root();
-        let engine = Engine::new(EngineConfig::new(&self.title).with_target_fps(self.target_fps))?;
-        if let Some(main_scene) = self.main_scene.as_deref() {
-            validate_main_scene(main_scene, &paths)?;
-        }
-
-        let asset_root = AssetRoot::new(&paths.asset_root)?;
-        let mut startup = StartupContext::new(
-            asset_root,
-            self.input_actions,
-            self.clear_color,
-            paths,
-            self.main_scene,
-        );
-
-        if let Some(error) = startup.audio_backend_error() {
-            #[cfg(feature = "logging")]
-            warn!(%error, "audio unavailable, game will continue silently");
-            #[cfg(not(feature = "logging"))]
-            let _ = error;
-        }
-
-        let game = G::new(&mut startup)?;
-        startup.load_main_scene()?;
-        let runtime_parts = startup.into_runtime_parts();
-        let adapter = Game2DAdapter::new(game, runtime_parts)?;
-
-        run_desktop(
-            engine,
-            adapter,
-            DesktopRunConfig::new(WindowConfig::new(self.title, self.width, self.height))
-                .with_timestep(FixedTimestep::from_fps(self.target_fps)),
-        )?;
-
-        Ok(())
+        AppRunner::new(self).run::<G>()
     }
 
     #[cfg(not(any(
@@ -471,6 +482,146 @@ impl App {
             },
             input_actions,
         }
+    }
+}
+
+impl AppBuilder {
+    pub fn add_plugin<P: Plugin + 'static>(mut self, plugin: P) -> Self {
+        self.plugins.push(Box::new(plugin));
+        self
+    }
+
+    pub fn add_component<C: ComponentDefinition + 'static>(
+        mut self,
+        component: C,
+    ) -> ComponentAppBuilder {
+        self.components.push(Box::new(component));
+        ComponentAppBuilder { builder: self }
+    }
+
+    #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "desktop"),
+        all(target_arch = "wasm32", feature = "web")
+    ))]
+    pub fn run<G: Game2D>(self) -> GameResult<()> {
+        AppRunner {
+            app: self.app,
+            plugins: self.plugins,
+            components: self.components,
+        }
+        .run::<G>()
+    }
+
+    #[cfg(not(any(
+        all(not(target_arch = "wasm32"), feature = "desktop"),
+        all(target_arch = "wasm32", feature = "web")
+    )))]
+    pub fn run<G: Game2D>(self) -> GameResult<()> {
+        let _ = self;
+        Err("seishin runtime feature is disabled; enable `desktop` or `web` to run an app".into())
+    }
+}
+
+impl ComponentAppBuilder {
+    pub fn add_component<C: ComponentDefinition + 'static>(mut self, component: C) -> Self {
+        self.builder.components.push(Box::new(component));
+        self
+    }
+
+    pub fn add_plugin<P: Plugin + 'static>(mut self, plugin: P) -> Self {
+        self.builder.plugins.push(Box::new(plugin));
+        self
+    }
+
+    #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "desktop"),
+        all(target_arch = "wasm32", feature = "web")
+    ))]
+    pub fn run(self) -> GameResult<()> {
+        self.builder.run::<ComponentDrivenGame>()
+    }
+
+    #[cfg(not(any(
+        all(not(target_arch = "wasm32"), feature = "desktop"),
+        all(target_arch = "wasm32", feature = "web")
+    )))]
+    pub fn run(self) -> GameResult<()> {
+        let _ = self;
+        Err("seishin runtime feature is disabled; enable `desktop` or `web` to run an app".into())
+    }
+}
+
+struct AppRunner {
+    app: App,
+    plugins: Vec<Box<dyn Plugin>>,
+    components: Vec<Box<dyn ComponentDefinition>>,
+}
+
+impl AppRunner {
+    fn new(app: App) -> Self {
+        Self {
+            app,
+            plugins: Vec::new(),
+            components: Vec::new(),
+        }
+    }
+
+    #[cfg(any(
+        all(not(target_arch = "wasm32"), feature = "desktop"),
+        all(target_arch = "wasm32", feature = "web")
+    ))]
+    fn run<G: Game2D>(self) -> GameResult<()> {
+        let Self {
+            app,
+            plugins,
+            components,
+        } = self;
+        app.logging.install();
+
+        let paths = ProjectPaths::new(app.asset_root, app.resource_root, app.user_root);
+        let _user_root = paths.user_root();
+        let engine = Engine::new(EngineConfig::new(&app.title).with_target_fps(app.target_fps))?;
+        if let Some(main_scene) = app.main_scene.as_deref() {
+            validate_main_scene(main_scene, &paths)?;
+        }
+
+        let asset_root = AssetRoot::new(&paths.asset_root)?;
+        let mut startup = StartupContext::new(
+            asset_root,
+            app.input_actions,
+            app.clear_color,
+            paths,
+            app.main_scene,
+        );
+
+        if let Some(error) = startup.audio_backend_error() {
+            #[cfg(feature = "logging")]
+            warn!(%error, "audio unavailable, game will continue silently");
+            #[cfg(not(feature = "logging"))]
+            let _ = error;
+        }
+
+        for component in components {
+            component.build(&mut startup)?;
+        }
+
+        for plugin in plugins {
+            plugin.build(&mut startup)?;
+        }
+
+        let game = G::new(&mut startup)?;
+        startup.load_main_scene()?;
+        let runtime_parts = startup.into_runtime_parts();
+        let adapter = Game2DAdapter::new(game, runtime_parts)?;
+
+        run_desktop(
+            engine,
+            adapter,
+            DesktopRunConfig::new(WindowConfig::new(app.title, app.width, app.height))
+                .with_timestep(FixedTimestep::from_fps(app.target_fps)),
+        )?;
+
+        Ok(())
     }
 }
 
@@ -550,6 +701,58 @@ pub trait Game2D: Sized + 'static {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Camera2DHandle {
+    state: Arc<Mutex<Camera2D>>,
+}
+
+impl Camera2DHandle {
+    pub fn new(camera: Camera2D) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(camera)),
+        }
+    }
+
+    pub fn get(&self) -> Camera2D {
+        self.state
+            .lock()
+            .map(|camera| *camera)
+            .unwrap_or_else(|_| Camera2D::default())
+    }
+
+    pub fn set(&self, camera: Camera2D) -> GameResult<()> {
+        *self
+            .state
+            .lock()
+            .map_err(|error| format!("failed to lock camera state: {error}"))? = camera;
+        Ok(())
+    }
+}
+
+impl Default for Camera2DHandle {
+    fn default() -> Self {
+        Self::new(Camera2D::default())
+    }
+}
+
+struct ComponentDrivenGame {
+    camera: Camera2DHandle,
+}
+
+impl Game2D for ComponentDrivenGame {
+    fn new(context: &mut StartupContext) -> GameResult<Self> {
+        let camera = context
+            .resource::<Camera2DHandle>()
+            .cloned()
+            .unwrap_or_default();
+        Ok(Self { camera })
+    }
+
+    fn render(&self, context: &mut RenderContext) {
+        context.camera(self.camera.get());
+    }
+}
+
 pub struct StartupContext {
     assets: Assets,
     audio: AudioSystem,
@@ -557,6 +760,7 @@ pub struct StartupContext {
     world: World,
     render_cache: RenderCache,
     components: ComponentRegistry,
+    app_resources: AppResources,
     component_instances: Vec<RuntimeComponent>,
     schedule: Schedule,
     paths: ProjectPaths,
@@ -582,6 +786,7 @@ impl StartupContext {
             world: World::default(),
             render_cache: RenderCache::default(),
             components: ComponentRegistry::default(),
+            app_resources: AppResources::default(),
             component_instances: Vec::new(),
             schedule: Schedule::default(),
             paths,
@@ -603,6 +808,38 @@ impl StartupContext {
 
     pub fn components(&mut self) -> &mut ComponentRegistry {
         &mut self.components
+    }
+
+    pub fn register_component<T: Component + Default + 'static>(
+        &mut self,
+        name: impl Into<String>,
+    ) -> GameResult<&mut Self> {
+        self.components.register::<T>(name)?;
+        Ok(self)
+    }
+
+    pub fn register_component_factory<F>(
+        &mut self,
+        name: impl Into<String>,
+        factory: F,
+    ) -> GameResult<&mut Self>
+    where
+        F: Fn(&toml::Value) -> GameResult<Box<dyn Component>> + 'static,
+    {
+        self.components.register_factory(name, factory)?;
+        Ok(self)
+    }
+
+    pub fn insert_resource<T: 'static>(&mut self, resource: T) -> Option<T> {
+        self.app_resources.insert(resource)
+    }
+
+    pub fn resource<T: 'static>(&self) -> Option<&T> {
+        self.app_resources.get()
+    }
+
+    pub fn resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.app_resources.get_mut()
     }
 
     pub fn schedule(&mut self) -> &mut Schedule {
@@ -784,12 +1021,11 @@ impl Schedule {
     }
 }
 
-pub type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component>>;
+pub type ComponentFactory = dyn Fn(&toml::Value) -> GameResult<Box<dyn Component>> + 'static;
 
-#[derive(Clone, Copy)]
 struct ComponentRegistration {
     type_id: Option<TypeId>,
-    factory: ComponentFactory,
+    factory: Box<ComponentFactory>,
 }
 
 pub struct RuntimeComponent {
@@ -797,7 +1033,32 @@ pub struct RuntimeComponent {
     component: Box<dyn Component>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
+struct AppResources {
+    values: HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl AppResources {
+    fn insert<T: 'static>(&mut self, resource: T) -> Option<T> {
+        self.values
+            .insert(TypeId::of::<T>(), Box::new(resource))
+            .and_then(|previous| previous.downcast::<T>().ok().map(|boxed| *boxed))
+    }
+
+    fn get<T: 'static>(&self) -> Option<&T> {
+        self.values
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_ref())
+    }
+
+    fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.values
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_mut())
+    }
+}
+
+#[derive(Default)]
 pub struct ComponentRegistry {
     registrations: HashMap<String, ComponentRegistration>,
 }
@@ -817,17 +1078,16 @@ impl ComponentRegistry {
             name,
             ComponentRegistration {
                 type_id: Some(TypeId::of::<T>()),
-                factory: |_| Ok(Box::<T>::default()),
+                factory: Box::new(|_| Ok(Box::<T>::default())),
             },
         );
         Ok(())
     }
 
-    pub fn register_factory(
-        &mut self,
-        name: impl Into<String>,
-        factory: ComponentFactory,
-    ) -> GameResult<()> {
+    pub fn register_factory<F>(&mut self, name: impl Into<String>, factory: F) -> GameResult<()>
+    where
+        F: Fn(&toml::Value) -> GameResult<Box<dyn Component>> + 'static,
+    {
         let name = name.into();
 
         if name.trim().is_empty() {
@@ -838,7 +1098,7 @@ impl ComponentRegistry {
             name,
             ComponentRegistration {
                 type_id: None,
-                factory,
+                factory: Box::new(factory),
             },
         );
         Ok(())
@@ -2481,6 +2741,30 @@ fn prepare_scene_document(
     let mut prefab_cache = HashMap::new();
     let mut resolved_entities = Vec::new();
 
+    for (map_index, scene_map) in scene.maps.into_iter().enumerate() {
+        let source = load_scene_map_source(&scene_map.source, context.paths)?;
+        let mut parsed_map = parse_tile_map(&source)?;
+        if let Some(tile_size) = scene_map.tile_size {
+            if tile_size <= 0.0 {
+                return Err(format!(
+                    "scene map tile_size must be greater than zero: {}",
+                    scene_map.source
+                )
+                .into());
+            }
+            parsed_map.tile_size = tile_size;
+        }
+
+        for map_entity in tile_map_to_scene_entities(&parsed_map, map_index) {
+            resolved_entities.push(build_scene_entity(
+                map_entity,
+                context.paths,
+                context.registry,
+                &mut prefab_cache,
+            )?);
+        }
+    }
+
     for scene_entity in scene.entities {
         resolved_entities.push(build_scene_entity(
             scene_entity,
@@ -2626,6 +2910,20 @@ fn load_scene_config(path: &str, paths: &ProjectPaths) -> GameResult<SceneDocume
     })
 }
 
+fn load_scene_map_source(path: &str, paths: &ProjectPaths) -> GameResult<String> {
+    let resolved = paths.resolve_resource(path)?;
+    let source = platform::read_to_string(&resolved).map_err(|error| {
+        PathDiagnosticError::resource(
+            path.to_string(),
+            resolved.clone(),
+            &paths.resource_root,
+            error,
+        )
+    })?;
+
+    Ok(source)
+}
+
 fn load_prefab_config(path: &str, paths: &ProjectPaths) -> GameResult<PrefabDocument> {
     let resolved = paths.resolve_resource(path)?;
     let source = platform::read_to_string(&resolved).map_err(|error| {
@@ -2683,8 +2981,8 @@ fn validate_custom_components(
         if !registry.contains(&component.type_name) {
             let name = record.name.as_deref().unwrap_or("<unnamed>");
             return Err(format!(
-                "unknown component type '{}' while loading entity '{}'; register it with ctx.components().register::<T>(\"{}\") before ctx.load_main_scene()",
-                component.type_name, name, component.type_name
+                "unknown component type '{}' while loading entity '{}'; register it with App::add_component(...) before run()",
+                component.type_name, name
             )
             .into());
         }
@@ -2695,6 +2993,10 @@ fn validate_custom_components(
 
 fn validate_data_refs(record: &EntityRecord, paths: &ProjectPaths) -> GameResult<()> {
     for value in record.data_refs.values() {
+        if !value.starts_with("res://") {
+            continue;
+        }
+
         let resolved = paths.resolve_resource(value)?;
         platform::ensure_readable_file(&resolved).map_err(|error| {
             PathDiagnosticError::resource(value.clone(), resolved, &paths.resource_root, error)
@@ -3416,6 +3718,46 @@ mod tests {
     }
 
     #[test]
+    fn main_scene_loads_non_resource_data_refs_without_path_validation() {
+        let mut startup = startup_with_scene(
+            "numeric_data.scene.toml",
+            r#"
+            [[entities]]
+            name = "NumericData"
+
+            [entities.data]
+            tile_size = "80"
+            character = "res://data/characters/player.toml"
+            "#,
+        );
+        let character_path = startup
+            .paths
+            .resource_root
+            .join("data/characters/player.toml");
+        std::fs::create_dir_all(
+            character_path
+                .parent()
+                .expect("character.toml parent should exist"),
+        )
+        .expect("create character path");
+        std::fs::write(&character_path, "display_name = \"Player\"").expect("write character file");
+
+        startup
+            .load_main_scene()
+            .expect("load scene with numeric data refs");
+
+        let entity = startup
+            .world()
+            .entity_by_name("NumericData")
+            .expect("numeric data entity");
+        assert_eq!(startup.world().data_ref(entity, "tile_size"), Some("80"));
+        assert_eq!(
+            startup.world().data_ref(entity, "character"),
+            Some("res://data/characters/player.toml")
+        );
+    }
+
+    #[test]
     fn main_scene_reuses_texture_assets_for_repeated_prefab_sprites() {
         let mut startup = basic_2d_startup();
 
@@ -3976,6 +4318,110 @@ mod tests {
             f32::from_bits(LAST_CONFIG_SPEED_BITS.load(std::sync::atomic::Ordering::SeqCst)),
             245.0
         );
+    }
+
+    #[test]
+    fn plugin_registers_scene_component_before_scene_load() {
+        LAST_CONFIG_SPEED_BITS.store(0, std::sync::atomic::Ordering::SeqCst);
+        let mut startup = startup_with_scene(
+            "plugin-component.scene.toml",
+            r#"
+            [[entities]]
+            name = "Configured"
+
+            [[entities.components]]
+            type = "ConfiguredController"
+            speed = 321.0
+            "#,
+        );
+        let plugin = |startup: &mut StartupContext| {
+            startup
+                .components()
+                .register_factory("ConfiguredController", configured_test_controller_factory)
+        };
+
+        plugin.build(&mut startup).expect("plugin build");
+        startup.load_main_scene().expect("load scene");
+
+        assert_eq!(
+            f32::from_bits(LAST_CONFIG_SPEED_BITS.load(std::sync::atomic::Ordering::SeqCst)),
+            321.0
+        );
+    }
+
+    #[test]
+    fn app_builder_preserves_plugin_order() {
+        let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let first = calls.clone();
+        let second = calls.clone();
+        let builder = App::new("plugin-order")
+            .add_plugin(move |_startup: &mut StartupContext| {
+                first.borrow_mut().push("first");
+                Ok(())
+            })
+            .add_plugin(move |_startup: &mut StartupContext| {
+                second.borrow_mut().push("second");
+                Ok(())
+            });
+        let mut startup = startup_with_scene(
+            "plugin-order.scene.toml",
+            r#"
+            [[entities]]
+            name = "Empty"
+            "#,
+        );
+
+        for plugin in &builder.plugins {
+            plugin.build(&mut startup).expect("plugin build");
+        }
+
+        assert_eq!(calls.borrow().as_slice(), ["first", "second"]);
+    }
+
+    #[test]
+    fn component_builder_registers_components_without_explicit_game_type() {
+        struct TestComponentDefinition;
+
+        impl ComponentDefinition for TestComponentDefinition {
+            fn build(&self, startup: &mut StartupContext) -> GameResult<()> {
+                startup.register_component::<TestController>("PlayerController")?;
+                Ok(())
+            }
+        }
+
+        let builder = App::new("component-builder").add_component(TestComponentDefinition);
+        let mut startup = startup_with_scene(
+            "component-builder.scene.toml",
+            r#"
+            [[entities]]
+            name = "Empty"
+            "#,
+        );
+
+        for component in &builder.builder.components {
+            component.build(&mut startup).expect("component build");
+        }
+
+        assert!(startup.components().contains("PlayerController"));
+    }
+
+    #[test]
+    fn plugin_errors_are_returned_before_scene_work() {
+        let mut startup = startup_with_scene(
+            "plugin-error.scene.toml",
+            r#"
+            [[entities]]
+            name = "Empty"
+            "#,
+        );
+        let plugin = |_startup: &mut StartupContext| -> GameResult<()> {
+            Err("plugin failed during startup".into())
+        };
+
+        let error = plugin.build(&mut startup).expect_err("plugin should fail");
+
+        assert!(error.to_string().contains("plugin failed during startup"));
+        assert_eq!(startup.world.entities().count(), 0);
     }
 
     #[test]

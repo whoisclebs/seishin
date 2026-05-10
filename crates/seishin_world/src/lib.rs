@@ -6,15 +6,16 @@ pub mod record;
 pub mod reload;
 pub mod resolve;
 pub mod save;
+pub mod tile_map;
 pub mod world;
 
 pub use builder::{SceneDocumentBuilder, SceneEntityBuilder};
 pub use diff::{SceneChange, SceneDiff, SceneDiffError, SceneDiffSide};
 pub use document::{
     CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneDocument,
-    SceneEntityDocument, SceneInstanceDocument, SceneSpriteDocument, SceneTransformDocument,
-    SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
-    SceneUiTextDocument, TagsDocument,
+    SceneEntityDocument, SceneInstanceDocument, SceneMapDocument, SceneSpriteDocument,
+    SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
+    SceneUiLayoutDocument, SceneUiTextDocument, TagsDocument,
 };
 pub use procedural::{ProceduralRng, ProceduralSceneBuilder, ProceduralSeed};
 pub use record::{
@@ -31,6 +32,9 @@ pub use save::{
     scene_document_from_resolved_entities, SceneDocumentExport, SceneExportOmission,
 };
 pub use seishin_core::{EntityId, Transform2D};
+pub use tile_map::{
+    parse_tile_map, tile_map_to_scene_entities, ParsedTileMap, TileCell, TileMapError,
+};
 pub use world::{LoadedScene, SceneInstance, World, WorldError};
 
 #[cfg(test)]
@@ -266,6 +270,7 @@ mod tests {
     #[test]
     fn scene_diff_lists_removed_updated_and_added_entities_by_id() {
         let old = SceneDocument {
+            maps: Vec::new(),
             entities: vec![
                 scene_entity(8, "Unchanged"),
                 scene_entity(2, "Removed"),
@@ -273,6 +278,7 @@ mod tests {
             ],
         };
         let new = SceneDocument {
+            maps: Vec::new(),
             entities: vec![
                 scene_entity(7, "Added"),
                 scene_entity(8, "Unchanged"),
@@ -302,9 +308,11 @@ mod tests {
     #[test]
     fn scene_diff_applies_to_document_and_normalizes_entity_order() {
         let mut target = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(5, "Removed"), scene_entity(1, "OldName")],
         };
         let new = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(3, "Added"), scene_entity(1, "NewName")],
         };
         let diff = SceneDiff::between(&target, &new).expect("scene diff");
@@ -314,6 +322,7 @@ mod tests {
         assert_eq!(
             target,
             SceneDocument {
+                maps: Vec::new(),
                 entities: vec![scene_entity(1, "NewName"), scene_entity(3, "Added")]
             }
         );
@@ -322,6 +331,7 @@ mod tests {
     #[test]
     fn scene_diff_requires_explicit_unique_entity_ids() {
         let old = SceneDocument {
+            maps: Vec::new(),
             entities: vec![SceneEntityDocument::default()],
         };
         let new = SceneDocument::default();
@@ -696,9 +706,11 @@ mod tests {
     #[test]
     fn scene_reload_queue_applies_scene_updates_explicitly_and_preserves_ids() {
         let mut target = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(5, "Removed"), scene_entity(1, "OldName")],
         };
         let updated = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(1, "NewName"), scene_entity(3, "Added")],
         };
         let mut queue = SceneReloadQueue::default();
@@ -718,6 +730,7 @@ mod tests {
     #[test]
     fn scene_reload_queue_keeps_failed_update_pending() {
         let mut target = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(1, "Player")],
         };
         let original = target.clone();
@@ -726,6 +739,7 @@ mod tests {
         queue.push_scene(
             "res://scenes/bad.scene.toml",
             SceneDocument {
+                maps: Vec::new(),
                 entities: vec![SceneEntityDocument::default()],
             },
         );
@@ -747,6 +761,7 @@ mod tests {
     #[test]
     fn scene_reload_queue_apply_all_is_atomic_when_later_update_fails() {
         let mut target = SceneDocument {
+            maps: Vec::new(),
             entities: vec![scene_entity(1, "Player")],
         };
         let original = target.clone();
@@ -755,12 +770,14 @@ mod tests {
         queue.push_scene(
             "res://scenes/valid.scene.toml",
             SceneDocument {
+                maps: Vec::new(),
                 entities: vec![scene_entity(1, "Updated")],
             },
         );
         queue.push_scene(
             "res://scenes/bad.scene.toml",
             SceneDocument {
+                maps: Vec::new(),
                 entities: vec![SceneEntityDocument::default()],
             },
         );

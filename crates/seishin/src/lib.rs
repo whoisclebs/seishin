@@ -9,12 +9,12 @@ pub use seishin_assets::preload_web_assets;
 pub use wasm_bindgen_futures::spawn_local;
 
 pub use app::{
-    run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
-    ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
-    FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
-    LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
-    SpriteBundle, SpriteRenderer, StartupContext, Texture, UiDrawCommand, UiDrawKind, UiElement,
-    UiRect, Vec2, WorldComponentExt,
+    run, ActiveDialogue, App, Assets, Camera2DHandle, CharacterData, CharacterDialogueData,
+    Component, ComponentDefinition, ComponentRegistry, DialogueData, DialogueState, Entity,
+    EntityMut, FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions,
+    InputQuery, LogLevel, Plugin, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase,
+    SpriteBuilder, SpriteBundle, SpriteRenderer, StartupContext, Texture, UiDrawCommand,
+    UiDrawKind, UiElement, UiRect, Vec2, WorldComponentExt,
 };
 pub use seishin_render_graph::{
     NodeLabel, RenderGraph, RenderGraphContext, RenderGraphError, RenderGraphPasses,
@@ -108,12 +108,12 @@ pub mod world {
 
 pub mod prelude {
     pub use crate::{
-        run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component,
-        ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
-        FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
-        LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
-        SpriteBundle, SpriteRenderer, StartupContext, Texture, UiDrawCommand, UiDrawKind,
-        UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
+        run, ActiveDialogue, App, Assets, Camera2DHandle, CharacterData, CharacterDialogueData,
+        Component, ComponentDefinition, ComponentRegistry, DialogueData, DialogueState, Entity,
+        EntityMut, FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions,
+        InputQuery, LogLevel, Plugin, RenderContext, ResourceToml, Resources, Schedule,
+        SchedulePhase, SpriteBuilder, SpriteBundle, SpriteRenderer, StartupContext, Texture,
+        UiDrawCommand, UiDrawKind, UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
     };
     pub use seishin_assets::{AssetBundle, AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{

@@ -1,7 +1,21 @@
 [components]
 name = { value = "player_prefab" }
 
+[components.player_controller]
+type = "PlayerController"
+speed = 180.0
+step_sound_cooldown_seconds = 0.18
+
+[components.interaction]
+type = "PlayerInteraction"
+action = "interact_rpg"
+interact_distance_tiles = 1.4
+
+[components.camera]
+type = "PlayerCamera"
+zoom = 1.0
+
 [components.sprite]
 texture = "asset://sprites/player.png"
-width = 80.0
-height = 80.0
+width = 48.0
+height = 48.0
