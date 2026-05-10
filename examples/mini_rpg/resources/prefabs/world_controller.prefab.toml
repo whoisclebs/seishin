@@ -3,3 +3,6 @@ name = { value = "world_controller" }
 
 [components.bootstrap]
 type = "MapBootstrap"
+
+[components.validation]
+type = "DevValidation"

@@ -1,6 +1,11 @@
 use seishin_core::EntityId;
 
-use crate::{SceneDocument, SceneEntityBuilder, SceneEntityDocument};
+use std::collections::BTreeMap;
+
+use crate::{
+    ParsedTileMap, SceneDocument, SceneEntityBuilder, SceneEntityDocument, TileCell,
+    TileDefinition, TileSetDefinition,
+};
 
 const SPLITMIX_INCREMENT: u64 = 0x9E37_79B9_7F4A_7C15;
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -79,6 +84,82 @@ pub struct ProceduralSceneBuilder {
     rng: ProceduralRng,
     next_synthetic_id: u64,
     entities: Vec<SceneEntityDocument>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProceduralTileMapBuilder {
+    rng: ProceduralRng,
+    tile_size: f32,
+    width: u32,
+    height: u32,
+    tileset: Option<TileSetDefinition>,
+    legend: BTreeMap<u8, TileDefinition>,
+    rows: Vec<Vec<TileCell>>,
+    spawns: BTreeMap<String, (i32, i32)>,
+}
+
+impl ProceduralTileMapBuilder {
+    pub fn new(seed: ProceduralSeed, width: u32, height: u32) -> Self {
+        Self {
+            rng: ProceduralRng::new(seed),
+            tile_size: 80.0,
+            width,
+            height,
+            tileset: None,
+            legend: BTreeMap::new(),
+            rows: Vec::new(),
+            spawns: BTreeMap::new(),
+        }
+    }
+
+    pub fn tile_size(mut self, tile_size: f32) -> Self {
+        if tile_size > 0.0 {
+            self.tile_size = tile_size;
+        }
+        self
+    }
+
+    pub fn tileset(mut self, tileset: TileSetDefinition) -> Self {
+        self.tileset = Some(tileset);
+        self
+    }
+
+    pub fn legend_tile(mut self, code: u8, definition: TileDefinition) -> Self {
+        self.legend.insert(code, definition);
+        self
+    }
+
+    pub fn spawn(mut self, name: impl Into<String>, column: i32, row: i32) -> Self {
+        self.spawns.insert(name.into(), (column, row));
+        self
+    }
+
+    pub fn fill(mut self, mut choose: impl FnMut(&mut ProceduralRng, u32, u32) -> u8) -> Self {
+        self.rows = (0..self.height)
+            .map(|row| {
+                (0..self.width)
+                    .map(|column| TileCell {
+                        code: choose(&mut self.rng, column, row),
+                    })
+                    .collect()
+            })
+            .collect();
+        self
+    }
+
+    pub fn build(mut self) -> ParsedTileMap {
+        if self.rows.is_empty() {
+            self = self.fill(|_, _, _| 0);
+        }
+
+        ParsedTileMap {
+            tile_size: self.tile_size,
+            tileset: self.tileset,
+            legend: self.legend,
+            rows: self.rows,
+            spawns: self.spawns,
+        }
+    }
 }
 
 impl ProceduralSceneBuilder {

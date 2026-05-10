@@ -23,16 +23,18 @@ pub use seishin_render_graph::{
     RenderGraphResources, RenderGraphRunner,
 };
 pub use seishin_world::{
-    AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
-    LoadedScene, PrefabDocument, ProceduralRng, ProceduralSceneBuilder, ProceduralSeed,
-    ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff, SceneDiffError,
-    SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport, SceneEntityBuilder,
+    parse_tile_map, tile_map_to_scene_entities, AudioRef, CustomComponentDocument,
+    CustomComponentRef, EntityRecord, InstanceSource, LoadedScene, ParsedTileMap, PrefabDocument,
+    ProceduralRng, ProceduralSceneBuilder, ProceduralSeed, ProceduralTileMapBuilder, ResolveError,
+    ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff, SceneDiffError, SceneDiffSide,
+    SceneDocument, SceneDocumentBuilder, SceneDocumentExport, SceneEntityBuilder,
     SceneEntityDocument, SceneExportOmission, SceneInstance, SceneInstanceDocument,
     SceneReloadError, SceneReloadQueue, SceneReloadReport, SceneReloadRequest, SceneReloadResult,
     SceneReloadUpdate, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
     SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
-    SpriteRef, TagsDocument, UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef,
-    UiRef, UiTextRef, World, WorldError,
+    SpriteRef, TagsDocument, TileCell, TileDefinition, TileMapError, TileSetDefinition, UiAnchor,
+    UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef, World,
+    WorldError,
 };
 pub use tilemap::{
     can_entity_occupy_tilemap, entity_sprite_aabb, intersects_entities_with_tag, TileMapQuery,
@@ -163,15 +165,17 @@ pub mod prelude {
         MobileTouchEvent, MobileTouchPhase,
     };
     pub use seishin_world::{
-        AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
-        LoadedScene, PrefabDocument, ProceduralRng, ProceduralSceneBuilder, ProceduralSeed,
-        ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff, SceneDiffError,
-        SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport,
-        SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance,
-        SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
-        SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
-        SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
-        SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor,
+        parse_tile_map, tile_map_to_scene_entities, AudioRef, CustomComponentDocument,
+        CustomComponentRef, EntityRecord, InstanceSource, LoadedScene, ParsedTileMap,
+        PrefabDocument, ProceduralRng, ProceduralSceneBuilder, ProceduralSeed,
+        ProceduralTileMapBuilder, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange,
+        SceneDiff, SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder,
+        SceneDocumentExport, SceneEntityBuilder, SceneEntityDocument, SceneExportOmission,
+        SceneInstance, SceneInstanceDocument, SceneReloadError, SceneReloadQueue,
+        SceneReloadReport, SceneReloadRequest, SceneReloadResult, SceneReloadUpdate,
+        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
+        SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef,
+        TagsDocument, TileCell, TileDefinition, TileMapError, TileSetDefinition, UiAnchor,
         UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     };
 }

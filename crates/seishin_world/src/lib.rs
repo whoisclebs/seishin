@@ -17,7 +17,9 @@ pub use document::{
     SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
     SceneUiLayoutDocument, SceneUiTextDocument, TagsDocument,
 };
-pub use procedural::{ProceduralRng, ProceduralSceneBuilder, ProceduralSeed};
+pub use procedural::{
+    ProceduralRng, ProceduralSceneBuilder, ProceduralSeed, ProceduralTileMapBuilder,
+};
 pub use record::{
     AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor,
     UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
@@ -33,7 +35,8 @@ pub use save::{
 };
 pub use seishin_core::{EntityId, Transform2D};
 pub use tile_map::{
-    parse_tile_map, tile_map_to_scene_entities, ParsedTileMap, TileCell, TileMapError,
+    parse_tile_map, tile_map_to_scene_entities, ParsedTileMap, TileCell, TileDefinition,
+    TileMapError, TileSetDefinition,
 };
 pub use world::{LoadedScene, SceneInstance, World, WorldError};
 
@@ -671,6 +674,71 @@ mod tests {
 
         assert_eq!(left_values, right_values);
         assert_ne!(left_values, [0, 0, 0]);
+    }
+
+    #[test]
+    fn procedural_tilemap_builder_generates_stable_engine_tilemaps() {
+        fn generated_map() -> ParsedTileMap {
+            ProceduralTileMapBuilder::new(ProceduralSeed::from_text("demo-map"), 4, 3)
+                .tile_size(16.0)
+                .legend_tile(
+                    0,
+                    TileDefinition {
+                        name: "open".to_string(),
+                        texture: None,
+                        atlas_index: Some(1),
+                        blocked: false,
+                        tint: None,
+                    },
+                )
+                .legend_tile(
+                    1,
+                    TileDefinition {
+                        name: "solid".to_string(),
+                        texture: None,
+                        atlas_index: Some(2),
+                        blocked: true,
+                        tint: None,
+                    },
+                )
+                .tileset(TileSetDefinition {
+                    atlas: "asset://sprites/open_tileset.png".to_string(),
+                    tile_width: 16,
+                    tile_height: 16,
+                    columns: 8,
+                    margin: 0,
+                    spacing: 0,
+                })
+                .spawn("Player", 1, 1)
+                .fill(|rng, column, row| {
+                    if row == 0 || column == 0 || column == 3 {
+                        1
+                    } else {
+                        rng.range_u32(0, 2) as u8
+                    }
+                })
+                .build()
+        }
+
+        let first = generated_map();
+        let second = generated_map();
+        let entities = tile_map_to_scene_entities(&first, 0);
+
+        assert_eq!(first, second);
+        assert_eq!(first.width(), 4);
+        assert_eq!(first.height(), 3);
+        assert!(entities.iter().any(|entity| {
+            entity
+                .name
+                .as_deref()
+                .is_some_and(|name| name.ends_with("Spawnpoint.Player"))
+        }));
+        assert!(entities.iter().any(|entity| {
+            entity
+                .tags
+                .as_ref()
+                .is_some_and(|tags| tags.values.iter().any(|tag| tag == "blocked"))
+        }));
     }
 
     #[test]

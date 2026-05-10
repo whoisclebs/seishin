@@ -204,6 +204,7 @@ fn component_modules_from_main_source(source: &str) -> Vec<String> {
 fn component_names_from_module_source(source: &str) -> Vec<String> {
     let mut names = Vec::new();
     for marker in [
+        "component::<",
         "component_factory(",
         "register_component_factory(",
         "register_component(",
