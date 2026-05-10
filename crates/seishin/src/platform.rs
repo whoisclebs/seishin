@@ -57,11 +57,12 @@ pub fn read_to_string(path: &Path) -> std::io::Result<String> {
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub async fn preload_web_resources(paths: &[String]) -> Result<(), wasm_bindgen::JsValue> {
-    let resources = futures_util::future::try_join_all(paths.iter().map(|path| async move {
+    let mut resources = Vec::with_capacity(paths.len());
+
+    for path in paths {
         let text = fetch_text(path).await?;
-        Ok::<_, wasm_bindgen::JsValue>((path.to_string(), text))
-    }))
-    .await?;
+        resources.push((path.to_string(), text));
+    }
 
     for (path, text) in resources {
         WEB_RESOURCE_CACHE.with(|cache| {

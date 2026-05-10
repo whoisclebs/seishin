@@ -10,22 +10,22 @@ pub use wasm_bindgen_futures::spawn_local;
 
 pub use app::{
     run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component2D,
-    ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut, FrameContext, FrameWorld,
-    Game2D, GameResult, GameplayInput, InputActions, InputQuery, LogLevel, RenderContext,
-    ResourceToml, Resources, SpriteBuilder, SpriteBundle, SpriteRenderer, StartupContext, Texture,
-    UiElement, Vec2, WorldComponentExt,
+    ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
+    FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
+    LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle, SpriteRenderer,
+    StartupContext, Texture, UiElement, Vec2, WorldComponentExt,
 };
 pub use seishin_render_graph::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
 pub use seishin_world::{
     AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
     PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff,
     SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport,
-    SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance, SceneReloadError,
-    SceneReloadQueue, SceneReloadReport, SceneReloadRequest, SceneReloadResult, SceneReloadUpdate,
-    SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
-    SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef,
-    TagsDocument, UiAnchor, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef, World,
-    WorldError,
+    SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance,
+    SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
+    SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
+    SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
+    SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef,
+    UiInteractionRef, UiLayoutRef, UiRef, UiTextRef, World, WorldError,
 };
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -102,10 +102,11 @@ pub mod world {
 pub mod prelude {
     pub use crate::{
         run, ActiveDialogue, App, Assets, CharacterData, CharacterDialogueData, Component2D,
-        ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut, FrameContext,
-        FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery, LogLevel,
-        RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle, SpriteRenderer,
-        StartupContext, Texture, UiElement, Vec2, World, WorldComponentExt, WorldError,
+        ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
+        FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
+        LogLevel, RenderContext, ResourceToml, Resources, SpriteBuilder, SpriteBundle,
+        SpriteRenderer, StartupContext, Texture, UiElement, Vec2, World, WorldComponentExt,
+        WorldError,
     };
     pub use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{AudioSkipReason, AudioSystem, PlaybackResult, SoundAsset};
@@ -138,11 +139,11 @@ pub mod prelude {
         PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff,
         SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport,
         SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance,
-        SceneReloadError, SceneReloadQueue, SceneReloadReport, SceneReloadRequest,
-        SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument, SceneTransformDocument,
-        SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
-        SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef, UiInteractionRef,
-        UiLayoutRef, UiRef, UiTextRef,
+        SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
+        SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
+        SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
+        SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef,
+        UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     };
 }
 

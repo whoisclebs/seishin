@@ -92,6 +92,8 @@ impl SceneEntityBuilder {
             texture: Some(sprite.texture),
             width: sprite.width,
             height: sprite.height,
+            layer: (sprite.layer != 0).then_some(sprite.layer),
+            sort_order: (sprite.sort_order != 0).then_some(sprite.sort_order),
         });
         self
     }

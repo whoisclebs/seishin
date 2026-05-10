@@ -192,21 +192,47 @@ fn collect_manifest_paths_inner(
 
 fn example_package_name(example_dir: &Path) -> Result<String, String> {
     let manifest_path = example_dir.join("Cargo.toml");
-    let metadata = cargo_metadata::MetadataCommand::new()
-        .manifest_path(&manifest_path)
-        .no_deps()
-        .exec()
-        .map_err(|error| format!("failed to read cargo metadata: {error}"))?;
-    let manifest_suffix = normalize_path(&manifest_path);
+    let source = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
 
-    metadata
-        .packages
-        .iter()
-        .find(|package| {
-            normalize_path(package.manifest_path.as_std_path()).ends_with(&manifest_suffix)
-        })
-        .map(|package| package.name.clone())
+    package_name_from_manifest_source(&source)
         .ok_or_else(|| format!("package name not found in {}", manifest_path.display()))
+}
+
+fn package_name_from_manifest_source(source: &str) -> Option<String> {
+    let mut in_package_section = false;
+
+    for line in source.lines() {
+        let line = line.split_once('#').map_or(line, |(line, _)| line).trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            in_package_section = line == "[package]";
+            continue;
+        }
+
+        if !in_package_section {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+
+        if key.trim() == "name" {
+            return parse_quoted_string(value.trim());
+        }
+    }
+
+    None
+}
+
+fn parse_quoted_string(value: &str) -> Option<String> {
+    let value = value.strip_prefix('"')?;
+    let end = value.find('"')?;
+
+    Some(value[..end].to_string())
 }
 
 fn normalize_path(path: &Path) -> String {
@@ -387,5 +413,30 @@ fn content_type(path: &Path) -> &'static str {
         Some("gif") => "image/gif",
         Some("svg") => "image/svg+xml",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::package_name_from_manifest_source;
+
+    #[test]
+    fn package_name_is_read_from_package_section_only() {
+        let manifest = r#"
+            [workspace]
+            members = ["examples/basic_2d"]
+
+            [dependencies]
+            name = "not-a-package"
+
+            [package]
+            version = "0.1.0"
+            name = "seishin_basic_2d"
+        "#;
+
+        assert_eq!(
+            package_name_from_manifest_source(manifest),
+            Some("seishin_basic_2d".to_string())
+        );
     }
 }

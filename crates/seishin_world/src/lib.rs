@@ -11,9 +11,9 @@ pub use builder::{SceneDocumentBuilder, SceneEntityBuilder};
 pub use diff::{SceneChange, SceneDiff, SceneDiffError, SceneDiffSide};
 pub use document::{
     CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneDocument,
-    SceneEntityDocument, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
-    SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
-    TagsDocument,
+    SceneEntityDocument, SceneInstanceDocument, SceneSpriteDocument, SceneTransformDocument,
+    SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
+    SceneUiTextDocument, TagsDocument,
 };
 pub use record::{
     AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor, UiImageRef,
@@ -85,6 +85,8 @@ mod tests {
                         texture: "asset://sprites/player.png".to_string(),
                         width: Some(96.0),
                         height: Some(96.0),
+                        layer: 0,
+                        sort_order: 0,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/step.wav".to_string(),
@@ -141,13 +143,13 @@ mod tests {
             Some(180.0)
         );
         assert_eq!(
-            export.omissions(),
-            &[SceneExportOmission::InstanceSourceNotRepresented {
-                entity: Some(entity),
-                scene: "res://scenes/source.scene.toml".to_string(),
-                source_entity: EntityId::new(1),
-            }]
+            exported
+                .instance
+                .as_ref()
+                .map(|instance| (instance.scene.as_str(), instance.source_entity)),
+            Some(("res://scenes/source.scene.toml", 1))
         );
+        assert!(export.omissions().is_empty());
 
         let round_trip =
             SceneDocument::from_toml_str(&scene.to_toml_string().expect("serialize scene"))
@@ -388,6 +390,81 @@ mod tests {
     }
 
     #[test]
+    fn sprite_order_and_instance_source_round_trip_through_scene_data() {
+        let scene = SceneDocument::from_toml_str(
+            r#"
+            [[entities]]
+            id = 10
+            name = "Instanced Enemy"
+
+            [entities.sprite]
+            texture = "asset://sprites/enemy.png"
+            width = 48.0
+            height = 64.0
+            layer = 2
+            sort_order = -3
+
+            [entities.instance]
+            scene = "res://scenes/enemy_pack.scene.toml"
+            source_entity = 4
+            "#,
+        )
+        .expect("parse scene");
+        let resolved = resolve_scene_entity(scene.entities[0].clone(), None).expect("resolve");
+        let mut world = World::default();
+
+        world.load_resolved([resolved]).expect("load scene");
+
+        let entity = EntityId::new(10);
+        let sprite = world.sprite(entity).expect("sprite");
+        assert_eq!(sprite.layer, 2);
+        assert_eq!(sprite.sort_order, -3);
+        assert_eq!(
+            world
+                .entity(entity)
+                .and_then(|record| record.instance_source.as_ref()),
+            Some(&InstanceSource {
+                scene: "res://scenes/enemy_pack.scene.toml".to_string(),
+                source_entity: EntityId::new(4),
+            })
+        );
+
+        let exported = world.to_scene_document_export();
+        let exported_entity = &exported.document().entities[0];
+
+        assert!(exported.omissions().is_empty());
+        assert_eq!(
+            exported_entity
+                .sprite
+                .as_ref()
+                .and_then(|sprite| sprite.layer),
+            Some(2)
+        );
+        assert_eq!(
+            exported_entity
+                .sprite
+                .as_ref()
+                .and_then(|sprite| sprite.sort_order),
+            Some(-3)
+        );
+        assert_eq!(
+            exported_entity
+                .instance
+                .as_ref()
+                .map(|instance| (instance.scene.as_str(), instance.source_entity)),
+            Some(("res://scenes/enemy_pack.scene.toml", 4))
+        );
+
+        let serialized = exported
+            .document()
+            .to_toml_string()
+            .expect("serialize scene");
+        let round_trip = SceneDocument::from_toml_str(&serialized).expect("parse serialized scene");
+
+        assert_eq!(round_trip, *exported.document());
+    }
+
+    #[test]
     fn world_queries_find_builtin_and_custom_components_in_entity_order() {
         struct EnemyBrain;
 
@@ -400,6 +477,8 @@ mod tests {
                         texture: "asset://sprites/high.png".to_string(),
                         width: None,
                         height: None,
+                        layer: 0,
+                        sort_order: 0,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/high.wav".to_string(),
@@ -422,6 +501,8 @@ mod tests {
                         texture: "asset://sprites/low.png".to_string(),
                         width: None,
                         height: None,
+                        layer: 0,
+                        sort_order: 0,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/low.wav".to_string(),
@@ -485,6 +566,8 @@ mod tests {
                         texture: "asset://sprites/low.png".to_string(),
                         width: Some(32.0),
                         height: Some(32.0),
+                        layer: 0,
+                        sort_order: 0,
                     }),
             )
             .build();

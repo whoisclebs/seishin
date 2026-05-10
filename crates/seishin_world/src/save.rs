@@ -5,7 +5,8 @@ use seishin_core::EntityId;
 use crate::{
     document::{
         CustomComponentDocument, SceneAudioDocument, SceneDocument, SceneEntityDocument,
-        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, TagsDocument,
+        SceneInstanceDocument, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
+        TagsDocument,
     },
     record::{CustomComponentRef, EntityRecord},
     resolve::ResolvedEntity,
@@ -34,12 +35,6 @@ impl SceneDocumentExport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneExportOmission {
-    /// Runtime instance provenance currently has no field in `SceneEntityDocument`.
-    InstanceSourceNotRepresented {
-        entity: Option<EntityId>,
-        scene: String,
-        source_entity: EntityId,
-    },
     /// Scene component documents can represent table-shaped TOML config only.
     CustomComponentConfigNotRepresented {
         entity: Option<EntityId>,
@@ -114,18 +109,17 @@ fn scene_entity_document_from_record(
     prefab: Option<String>,
     omissions: &mut Vec<SceneExportOmission>,
 ) -> SceneEntityDocument {
-    if let Some(source) = &record.instance_source {
-        omissions.push(SceneExportOmission::InstanceSourceNotRepresented {
-            entity,
-            scene: source.scene.clone(),
-            source_entity: source.source_entity,
-        });
-    }
-
     SceneEntityDocument {
         id: entity.map(EntityId::raw),
         name: record.name.clone(),
         prefab,
+        instance: record
+            .instance_source
+            .as_ref()
+            .map(|source| SceneInstanceDocument {
+                scene: source.scene.clone(),
+                source_entity: source.source_entity.raw(),
+            }),
         transform: Some(SceneTransformDocument {
             x: Some(record.transform.x),
             y: Some(record.transform.y),
@@ -147,6 +141,8 @@ fn scene_entity_document_from_record(
             texture: Some(sprite.texture.clone()),
             width: sprite.width,
             height: sprite.height,
+            layer: (sprite.layer != 0).then_some(sprite.layer),
+            sort_order: (sprite.sort_order != 0).then_some(sprite.sort_order),
         }),
         audio: record.audio.as_ref().map(|audio| SceneAudioDocument {
             sound: Some(audio.sound.clone()),

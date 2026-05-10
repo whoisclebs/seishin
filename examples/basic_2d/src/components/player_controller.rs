@@ -8,24 +8,18 @@ pub struct PlayerController {
 impl PlayerController {
     pub const DEFAULT_SPEED: f32 = 180.0;
 
-    fn speed(&mut self, ctx: &FrameContext<'_>) -> GameResult<f32> {
-        if let Some(speed) = self.speed {
-            return Ok(speed);
-        }
+    pub fn with_speed(speed: f32) -> Self {
+        Self { speed: Some(speed) }
+    }
 
-        let config = ctx
-            .resources()
-            .toml("res://data/components/player_controller.toml")?;
-        let speed = config.f32("speed").unwrap_or(Self::DEFAULT_SPEED);
-
-        self.speed = Some(speed);
-        Ok(speed)
+    fn speed(&self) -> f32 {
+        self.speed.unwrap_or(Self::DEFAULT_SPEED)
     }
 }
 
 impl Component2D for PlayerController {
     fn update(&mut self, entity: Entity, ctx: &mut FrameContext<'_>) -> GameResult<()> {
-        let speed = self.speed(ctx)?;
+        let speed = self.speed();
         let movement = ctx.input().axis2d("move");
         let displacement = movement * speed * ctx.delta_seconds();
 

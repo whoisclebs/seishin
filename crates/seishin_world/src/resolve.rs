@@ -7,8 +7,8 @@ use crate::{
         SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
     },
     record::{
-        AudioRef, CustomComponentRef, EntityRecord, SpriteRef, UiImageRef, UiInteractionRef,
-        UiLayoutRef, UiRef, UiTextRef,
+        AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiImageRef,
+        UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     },
 };
 
@@ -61,6 +61,13 @@ pub fn resolve_scene_entity(
         .unwrap_or_default();
     let id = entity.id.map(EntityId::new);
     let prefab = entity.prefab;
+
+    if let Some(instance) = entity.instance {
+        blueprint.record.instance_source = Some(InstanceSource {
+            scene: instance.scene,
+            source_entity: EntityId::new(instance.source_entity),
+        });
+    }
 
     if entity.name.is_some() {
         blueprint.record.name = entity.name;
@@ -194,11 +201,24 @@ fn merge_sprite(
     let height = override_value
         .height
         .or_else(|| base.as_ref().and_then(|sprite| sprite.height));
+    let layer = override_value
+        .layer
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.layer));
+    let sort_order = override_value
+        .sort_order
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.sort_order));
 
-    (texture.is_some() || width.is_some() || height.is_some()).then_some(SceneSpriteDocument {
+    (texture.is_some()
+        || width.is_some()
+        || height.is_some()
+        || layer.is_some()
+        || sort_order.is_some())
+    .then_some(SceneSpriteDocument {
         texture,
         width,
         height,
+        layer,
+        sort_order,
     })
 }
 
@@ -210,6 +230,8 @@ fn finalize_sprite(sprite: Option<SceneSpriteDocument>) -> Option<SpriteRef> {
         texture,
         width: sprite.width,
         height: sprite.height,
+        layer: sprite.layer.unwrap_or_default(),
+        sort_order: sprite.sort_order.unwrap_or_default(),
     })
 }
 
@@ -490,6 +512,8 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                layer: 0,
+                sort_order: 0,
             })
         );
     }
@@ -501,6 +525,8 @@ mod tests {
             [components.sprite]
             width = 96.0
             height = 96.0
+            layer = 5
+            sort_order = 1
             "#,
         )
         .expect("parse prefab");
@@ -510,6 +536,7 @@ mod tests {
 
             [entities.sprite]
             texture = "asset://sprites/player.png"
+            sort_order = 7
             "#,
         )
         .expect("parse scene");
@@ -523,6 +550,8 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                layer: 5,
+                sort_order: 7,
             })
         );
     }
@@ -564,6 +593,8 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                layer: 0,
+                sort_order: 0,
             })
         );
     }

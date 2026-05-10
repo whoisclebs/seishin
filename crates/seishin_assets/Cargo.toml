@@ -10,17 +10,15 @@ rust-version.workspace = true
 image = { version = "0.24.9", default-features = false, features = ["png"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-futures-util = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
 wasm-bindgen = { workspace = true, optional = true }
 wasm-bindgen-futures = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true, features = ["Response", "Window"] }
 
 [features]
-default = ["png", "web"]
+default = ["png"]
 png = ["dep:image"]
 web = [
-    "dep:futures-util",
     "dep:js-sys",
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",

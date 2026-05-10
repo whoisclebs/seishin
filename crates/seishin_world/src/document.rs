@@ -29,6 +29,8 @@ pub struct SceneEntityDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefab: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance: Option<SceneInstanceDocument>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub transform: Option<SceneTransformDocument>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<TagsDocument>,
@@ -54,6 +56,12 @@ impl PrefabDocument {
     pub fn from_toml_str(source: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(source)
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SceneInstanceDocument {
+    pub scene: String,
+    pub source_entity: u64,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -84,6 +92,10 @@ pub struct SceneSpriteDocument {
     pub width: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]

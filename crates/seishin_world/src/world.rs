@@ -536,6 +536,8 @@ mod tests {
             texture: "asset://sprites/player.png".to_string(),
             width: Some(96.0),
             height: Some(96.0),
+            layer: 0,
+            sort_order: 0,
         }));
 
         world.translate(entity, 3.0, 4.0).expect("translate");

@@ -19,7 +19,7 @@ wasm-bindgen-futures = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true, features = ["console", "Document", "Element", "HtmlCanvasElement", "Performance", "Window"] }
 
 [features]
-default = ["desktop", "web"]
+default = ["desktop"]
 desktop = ["dep:pollster", "dep:winit", "seishin_render/wgpu-backend"]
 web = [
     "dep:pollster",

@@ -571,11 +571,11 @@ pub trait Component2D {
     fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()>;
 }
 
-type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component2D>>;
+pub type ComponentFactory = fn(&toml::Value) -> GameResult<Box<dyn Component2D>>;
 
 #[derive(Clone, Copy)]
 struct ComponentRegistration {
-    type_id: TypeId,
+    type_id: Option<TypeId>,
     factory: ComponentFactory,
 }
 
@@ -603,8 +603,29 @@ impl ComponentRegistry {
         self.registrations.insert(
             name,
             ComponentRegistration {
-                type_id: TypeId::of::<T>(),
+                type_id: Some(TypeId::of::<T>()),
                 factory: |_| Ok(Box::<T>::default()),
+            },
+        );
+        Ok(())
+    }
+
+    pub fn register_factory(
+        &mut self,
+        name: impl Into<String>,
+        factory: ComponentFactory,
+    ) -> GameResult<()> {
+        let name = name.into();
+
+        if name.trim().is_empty() {
+            return Err("component registration name must not be empty".into());
+        }
+
+        self.registrations.insert(
+            name,
+            ComponentRegistration {
+                type_id: None,
+                factory,
             },
         );
         Ok(())
@@ -617,7 +638,7 @@ impl ComponentRegistry {
     fn type_id(&self, name: &str) -> Option<TypeId> {
         self.registrations
             .get(name)
-            .map(|registration| registration.type_id)
+            .and_then(|registration| registration.type_id)
     }
 
     fn instantiate(&self, component: &CustomComponentRef) -> GameResult<Box<dyn Component2D>> {
@@ -866,11 +887,23 @@ fn load_audio_asset(
 }
 
 fn render_world(world: &World, render_cache: &RenderCache, render: &mut RenderContext) {
-    for (entity, record) in world.entities() {
-        let Some(renderer) = render_cache.get(&entity) else {
-            continue;
-        };
+    let mut renderables = world
+        .entities()
+        .filter_map(|(entity, record)| {
+            render_cache
+                .get(&entity)
+                .map(|renderer| (entity, record, renderer))
+        })
+        .collect::<Vec<_>>();
 
+    renderables.sort_by_key(|(entity, record, _)| {
+        let layer = record.sprite.as_ref().map_or(0, |sprite| sprite.layer);
+        let sort_order = record.sprite.as_ref().map_or(0, |sprite| sprite.sort_order);
+
+        (layer, sort_order, *entity)
+    });
+
+    for (_entity, record, renderer) in renderables {
         render.texture(&renderer.texture);
         render.sprite(Sprite::new(
             renderer.texture.id(),
@@ -2188,6 +2221,92 @@ mod tests {
     }
 
     #[test]
+    fn world_render_order_uses_sprite_layer_sort_order_and_entity_id() {
+        let back_texture = Texture {
+            data: TextureData::rgba8(TextureId::new(10), 1, 1, vec![255, 255, 255, 255])
+                .expect("valid texture"),
+        };
+        let middle_texture = Texture {
+            data: TextureData::rgba8(TextureId::new(20), 1, 1, vec![255, 255, 255, 255])
+                .expect("valid texture"),
+        };
+        let front_texture = Texture {
+            data: TextureData::rgba8(TextureId::new(30), 1, 1, vec![255, 255, 255, 255])
+                .expect("valid texture"),
+        };
+        let mut world = World::default();
+        let mut render_cache = RenderCache::default();
+        let front = EntityId::new(30);
+        let middle = EntityId::new(20);
+        let back = EntityId::new(10);
+
+        world
+            .insert(
+                front,
+                EntityRecord {
+                    sprite: Some(seishin_world::SpriteRef {
+                        texture: "asset://sprites/front.png".to_string(),
+                        width: Some(16.0),
+                        height: Some(16.0),
+                        layer: 5,
+                        sort_order: 0,
+                    }),
+                    ..EntityRecord::default()
+                },
+            )
+            .expect("front");
+        world
+            .insert(
+                middle,
+                EntityRecord {
+                    sprite: Some(seishin_world::SpriteRef {
+                        texture: "asset://sprites/middle.png".to_string(),
+                        width: Some(16.0),
+                        height: Some(16.0),
+                        layer: 1,
+                        sort_order: 7,
+                    }),
+                    ..EntityRecord::default()
+                },
+            )
+            .expect("middle");
+        world
+            .insert(
+                back,
+                EntityRecord {
+                    sprite: Some(seishin_world::SpriteRef {
+                        texture: "asset://sprites/back.png".to_string(),
+                        width: Some(16.0),
+                        height: Some(16.0),
+                        layer: 1,
+                        sort_order: -2,
+                    }),
+                    ..EntityRecord::default()
+                },
+            )
+            .expect("back");
+        render_cache.insert(front, SpriteRenderer::new(front_texture, Vec2::splat(16.0)));
+        render_cache.insert(
+            middle,
+            SpriteRenderer::new(middle_texture, Vec2::splat(16.0)),
+        );
+        render_cache.insert(back, SpriteRenderer::new(back_texture, Vec2::splat(16.0)));
+
+        let mut render = RenderContext::new(ClearColor::BLACK);
+        render_world(&world, &render_cache, &mut render);
+
+        assert_eq!(
+            render
+                .state()
+                .sprites
+                .iter()
+                .map(|sprite| sprite.texture_id)
+                .collect::<Vec<_>>(),
+            vec![TextureId::new(10), TextureId::new(20), TextureId::new(30)]
+        );
+    }
+
+    #[test]
     fn world_queries_non_renderable_entities() {
         let mut world = World::default();
         let render_cache = RenderCache::default();
@@ -2666,6 +2785,33 @@ mod tests {
     }
 
     #[test]
+    fn scene_component_config_is_passed_to_registered_factory() {
+        LAST_CONFIG_SPEED_BITS.store(0, std::sync::atomic::Ordering::SeqCst);
+        let mut startup = startup_with_scene(
+            "configured-component.scene.toml",
+            r#"
+            [[entities]]
+            name = "Configured"
+
+            [[entities.components]]
+            type = "ConfiguredController"
+            speed = 245.0
+            "#,
+        );
+
+        startup
+            .components()
+            .register_factory("ConfiguredController", configured_test_controller_factory)
+            .expect("register factory");
+        startup.load_main_scene().expect("load scene");
+
+        assert_eq!(
+            f32::from_bits(LAST_CONFIG_SPEED_BITS.load(std::sync::atomic::Ordering::SeqCst)),
+            245.0
+        );
+    }
+
+    #[test]
     fn failed_main_scene_duplicate_ids_do_not_pollute_startup_state() {
         let mut startup = startup_with_scene(
             "duplicate.scene.toml",
@@ -2834,6 +2980,20 @@ mod tests {
             context.world().translate(entity, Vec2::new(1.0, 0.0));
             Ok(())
         }
+    }
+
+    static LAST_CONFIG_SPEED_BITS: std::sync::atomic::AtomicU32 =
+        std::sync::atomic::AtomicU32::new(0);
+
+    fn configured_test_controller_factory(
+        config: &toml::Value,
+    ) -> GameResult<Box<dyn Component2D>> {
+        let speed = config
+            .get("speed")
+            .and_then(toml::Value::as_float)
+            .unwrap_or_default() as f32;
+        LAST_CONFIG_SPEED_BITS.store(speed.to_bits(), std::sync::atomic::Ordering::SeqCst);
+        Ok(Box::<TestController>::default())
     }
 
     fn basic_2d_startup() -> StartupContext {

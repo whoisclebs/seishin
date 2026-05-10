@@ -45,6 +45,8 @@ pub struct SpriteRef {
     pub texture: String,
     pub width: Option<f32>,
     pub height: Option<f32>,
+    pub layer: i32,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
