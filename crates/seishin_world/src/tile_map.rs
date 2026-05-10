@@ -103,6 +103,44 @@ impl ParsedTileMap {
     pub fn definition(&self, code: u8) -> Option<&TileDefinition> {
         self.legend.get(&code)
     }
+
+    pub fn tile(&self, column: i32, row: i32) -> Option<TileCell> {
+        if column < 0 || row < 0 {
+            return None;
+        }
+
+        self.rows
+            .get(row as usize)
+            .and_then(|row| row.get(column as usize))
+            .copied()
+    }
+
+    pub fn set_tile(&mut self, column: i32, row: i32, code: u8) -> Result<(), TileMapError> {
+        if !self.legend.contains_key(&code) {
+            return Err(TileMapError::new(format!(
+                "tile code {code} is not defined in the map legend"
+            )));
+        }
+        if column < 0 || row < 0 {
+            return Err(TileMapError::new(format!(
+                "tile coordinate ({column}, {row}) is outside the map"
+            )));
+        }
+
+        let Some(row_tiles) = self.rows.get_mut(row as usize) else {
+            return Err(TileMapError::new(format!(
+                "tile coordinate ({column}, {row}) is outside the map"
+            )));
+        };
+        let Some(tile) = row_tiles.get_mut(column as usize) else {
+            return Err(TileMapError::new(format!(
+                "tile coordinate ({column}, {row}) is outside the map"
+            )));
+        };
+
+        tile.code = code;
+        Ok(())
+    }
 }
 
 pub fn parse_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
@@ -664,6 +702,48 @@ mod tests {
         );
         assert_eq!(map.definition(0).map(|tile| tile.blocked), Some(false));
         assert_eq!(map.definition(1).map(|tile| tile.blocked), Some(true));
+    }
+
+    #[test]
+    fn tilemap_edit_preserves_atlas_and_collision_metadata() {
+        let mut map = parse_tile_map(
+            r#"
+            tile_size = 16.0
+
+            [tileset]
+            atlas = "asset://sprites/open_tileset.png"
+            tile_width = 16
+            tile_height = 16
+            columns = 10
+
+            [legend.0]
+            name = "open"
+            atlas_index = 2
+            collision = "none"
+
+            [legend.1]
+            name = "solid"
+            atlas_index = 13
+            collision = "solid"
+
+            [tiles]
+            rows = [[0, 0]]
+            "#,
+        )
+        .expect("parse map");
+
+        map.set_tile(1, 0, 1).expect("edit tile");
+
+        assert_eq!(map.tile(1, 0), Some(TileCell { code: 1 }));
+        assert_eq!(
+            map.tileset.as_ref().map(|tileset| tileset.atlas.as_str()),
+            Some("asset://sprites/open_tileset.png")
+        );
+        assert!(map
+            .definition(1)
+            .is_some_and(|definition| definition.blocked));
+        assert!(map.set_tile(9, 9, 1).is_err());
+        assert!(map.set_tile(0, 0, 9).is_err());
     }
 
     #[test]

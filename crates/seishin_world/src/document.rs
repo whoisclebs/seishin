@@ -20,6 +20,41 @@ impl SceneDocument {
     pub fn to_toml_string(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
+
+    pub fn entity_by_id(&self, id: u64) -> Option<&SceneEntityDocument> {
+        self.entities.iter().find(|entity| entity.id == Some(id))
+    }
+
+    pub fn entity_mut_by_id(&mut self, id: u64) -> Option<&mut SceneEntityDocument> {
+        self.entities
+            .iter_mut()
+            .find(|entity| entity.id == Some(id))
+    }
+
+    pub fn upsert_entity(&mut self, entity: SceneEntityDocument) -> Option<SceneEntityDocument> {
+        let Some(id) = entity.id else {
+            self.entities.push(entity);
+            return None;
+        };
+        let Some(existing) = self
+            .entities
+            .iter_mut()
+            .find(|existing| existing.id == Some(id))
+        else {
+            self.entities.push(entity);
+            return None;
+        };
+
+        Some(std::mem::replace(existing, entity))
+    }
+
+    pub fn remove_entity_by_id(&mut self, id: u64) -> Option<SceneEntityDocument> {
+        let index = self
+            .entities
+            .iter()
+            .position(|entity| entity.id == Some(id))?;
+        Some(self.entities.remove(index))
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]

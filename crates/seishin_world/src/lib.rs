@@ -664,6 +664,35 @@ mod tests {
     }
 
     #[test]
+    fn scene_edit_helpers_update_entities_by_stable_id() {
+        let mut scene = SceneDocumentBuilder::new()
+            .entity(SceneEntityBuilder::new().id(EntityId::new(1)).named("Old"))
+            .entity(SceneEntityBuilder::new().id(EntityId::new(2)).named("Keep"))
+            .build();
+
+        let previous = scene.upsert_entity(
+            SceneEntityBuilder::new()
+                .id(EntityId::new(1))
+                .named("New")
+                .build(),
+        );
+        let removed = scene.remove_entity_by_id(2).expect("removed entity");
+
+        assert_eq!(
+            previous.and_then(|entity| entity.name),
+            Some("Old".to_string())
+        );
+        assert_eq!(
+            scene
+                .entity_by_id(1)
+                .and_then(|entity| entity.name.as_deref()),
+            Some("New")
+        );
+        assert_eq!(removed.name.as_deref(), Some("Keep"));
+        assert!(scene.entity_by_id(2).is_none());
+    }
+
+    #[test]
     fn procedural_rng_repeats_values_for_the_same_seed() {
         let seed = ProceduralSeed::from_u64(42);
         let mut left = ProceduralRng::new(seed);
