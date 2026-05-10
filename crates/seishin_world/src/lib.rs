@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod diff;
 pub mod document;
+pub mod procedural;
 pub mod record;
 pub mod reload;
 pub mod resolve;
@@ -15,6 +16,7 @@ pub use document::{
     SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
     SceneUiTextDocument, TagsDocument,
 };
+pub use procedural::{ProceduralRng, ProceduralSceneBuilder, ProceduralSeed};
 pub use record::{
     AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor, UiImageRef,
     UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
@@ -620,6 +622,75 @@ mod tests {
         assert_eq!(loaded, vec![EntityId::new(1), EntityId::new(100)]);
         assert_eq!(world.name(EntityId::new(1)), Some("Implicit"));
         assert_eq!(world.name(EntityId::new(100)), Some("Explicit"));
+    }
+
+    #[test]
+    fn procedural_rng_repeats_values_for_the_same_seed() {
+        let seed = ProceduralSeed::from_u64(42);
+        let mut left = ProceduralRng::new(seed);
+        let mut right = ProceduralRng::new(seed);
+
+        let left_values = [left.next_u64(), left.next_u64(), left.next_u64()];
+        let right_values = [right.next_u64(), right.next_u64(), right.next_u64()];
+
+        assert_eq!(left_values, right_values);
+        assert_ne!(left_values, [0, 0, 0]);
+    }
+
+    #[test]
+    fn procedural_scene_builder_generates_stable_ids_toml_and_loads_world() {
+        fn generated_scene() -> SceneDocument {
+            let mut scene = ProceduralSceneBuilder::new(ProceduralSeed::from_text("forest-room"));
+
+            for index in 0..3 {
+                let x = scene.rng_mut().range_f32(-8.0, 8.0);
+                let y = scene.rng_mut().range_f32(-4.0, 4.0);
+                scene.push_generated_entity(|entity, id| {
+                    entity
+                        .named(format!("Tree {}", id.raw()))
+                        .tag("tree")
+                        .data_ref("index", index.to_string())
+                        .transform(Transform2D::from_translation(x, y))
+                });
+            }
+
+            scene.build()
+        }
+
+        let first = generated_scene();
+        let second = generated_scene();
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first
+                .entities
+                .iter()
+                .map(|entity| entity.id)
+                .collect::<Vec<_>>(),
+            second
+                .entities
+                .iter()
+                .map(|entity| entity.id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            first.to_toml_string().expect("serialize generated scene"),
+            second.to_toml_string().expect("serialize generated scene")
+        );
+
+        let resolved = first
+            .entities
+            .clone()
+            .into_iter()
+            .map(|entity| resolve_scene_entity(entity, None).expect("resolve generated entity"))
+            .collect::<Vec<_>>();
+        let mut world = World::default();
+        let loaded = world.load_resolved(resolved).expect("load generated scene");
+
+        assert_eq!(loaded.len(), 3);
+        assert!(loaded
+            .iter()
+            .all(|entity| world.tags(*entity).is_some_and(|tags| tags == ["tree"])));
     }
 
     #[test]

@@ -7,6 +7,7 @@ use crate::{
         CustomComponentDocument, SceneAudioDocument, SceneDocument, SceneEntityDocument,
         SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
     },
+    procedural::{ProceduralSceneBuilder, ProceduralSeed},
     record::{AudioRef, SpriteRef, UiRef},
 };
 
@@ -18,6 +19,10 @@ pub struct SceneDocumentBuilder {
 impl SceneDocumentBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn procedural(seed: ProceduralSeed) -> ProceduralSceneBuilder {
+        ProceduralSceneBuilder::new(seed)
     }
 
     pub fn entity(mut self, entity: SceneEntityBuilder) -> Self {
