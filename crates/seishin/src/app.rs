@@ -1153,7 +1153,13 @@ fn render_world(world: &World, render_cache: &RenderCache, render: &mut RenderCo
 }
 
 fn extract_ui_world(world: &World, render: &mut RenderContext) {
-    render.ui_elements.extend(sorted_ui_elements(world));
+    let elements = sorted_ui_elements(world);
+    for element in &elements {
+        render
+            .ui_draw_commands
+            .extend(ui_draw_commands_for_element(element));
+    }
+    render.ui_elements.extend(elements);
 }
 
 fn sorted_ui_elements(world: &World) -> Vec<UiElement> {
@@ -1176,6 +1182,35 @@ fn ui_hit_test_world(world: &World, x: f32, y: f32, viewport: RenderSize) -> Opt
         .into_iter()
         .filter(|element| element.rect(viewport).contains(x, y))
         .max_by_key(|element| (element.ui.layout.z_index, element.entity))
+}
+
+fn ui_draw_commands_for_element(element: &UiElement) -> Vec<UiDrawCommand> {
+    let mut commands = Vec::new();
+
+    if let Some(image) = &element.ui.image {
+        commands.push(UiDrawCommand {
+            entity: element.entity,
+            layout: element.ui.layout,
+            kind: UiDrawKind::Image {
+                texture: image.texture.clone(),
+                tint: image.tint.clone(),
+            },
+        });
+    }
+
+    if let Some(text) = &element.ui.text {
+        commands.push(UiDrawCommand {
+            entity: element.entity,
+            layout: element.ui.layout,
+            kind: UiDrawKind::Text {
+                value: text.value.clone(),
+                font_size: text.font_size,
+                color: text.color.clone(),
+            },
+        });
+    }
+
+    commands
 }
 
 const FRAME_RENDER_NODE_RESET: &str = "reset";
@@ -1641,6 +1676,32 @@ impl UiRect {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiDrawCommand {
+    pub entity: Entity,
+    pub layout: seishin_world::UiLayoutRef,
+    pub kind: UiDrawKind,
+}
+
+impl UiDrawCommand {
+    pub fn rect(&self, viewport: RenderSize) -> UiRect {
+        UiRect::from_layout(self.layout, viewport)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiDrawKind {
+    Image {
+        texture: String,
+        tint: Option<String>,
+    },
+    Text {
+        value: String,
+        font_size: f32,
+        color: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct RenderContext {
     target: RenderTargetId,
@@ -1651,6 +1712,7 @@ pub struct RenderContext {
     textures: Vec<TextureData>,
     sprites: Vec<Sprite>,
     ui_elements: Vec<UiElement>,
+    ui_draw_commands: Vec<UiDrawCommand>,
 }
 
 impl RenderContext {
@@ -1664,6 +1726,7 @@ impl RenderContext {
             textures: Vec::new(),
             sprites: Vec::new(),
             ui_elements: Vec::new(),
+            ui_draw_commands: Vec::new(),
         }
     }
 
@@ -1674,6 +1737,7 @@ impl RenderContext {
         self.textures.clear();
         self.sprites.clear();
         self.ui_elements.clear();
+        self.ui_draw_commands.clear();
     }
 
     pub fn clear(&mut self, color: ClearColor) {
@@ -1720,6 +1784,10 @@ impl RenderContext {
 
     pub fn ui_elements(&self) -> &[UiElement] {
         &self.ui_elements
+    }
+
+    pub fn ui_draw_commands(&self) -> &[UiDrawCommand] {
+        &self.ui_draw_commands
     }
 
     pub fn ui_hit_test(&self, x: f32, y: f32, viewport: RenderSize) -> Option<&UiElement> {
@@ -2919,6 +2987,56 @@ mod tests {
         assert_eq!(
             frame.ui_hit_test(50.0, 50.0, RenderSize::new(100, 100)),
             Some(front)
+        );
+    }
+
+    #[test]
+    fn ui_text_and_image_extract_to_draw_commands() {
+        let mut world = World::default();
+        world
+            .insert(
+                EntityId::new(1),
+                EntityRecord {
+                    ui: Some(UiRef {
+                        layout: seishin_world::UiLayoutRef {
+                            anchor: seishin_world::UiAnchor::TopLeft,
+                            width: 128.0,
+                            height: 32.0,
+                            ..Default::default()
+                        },
+                        text: Some(seishin_world::UiTextRef {
+                            value: "Play".to_string(),
+                            font_size: 18.0,
+                            color: "#ffffff".to_string(),
+                        }),
+                        image: Some(seishin_world::UiImageRef {
+                            texture: "asset://ui/button.png".to_string(),
+                            tint: Some("#ffffffff".to_string()),
+                        }),
+                        interaction: None,
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("ui entity");
+        let mut render = RenderContext::new(ClearColor::BLACK);
+
+        extract_ui_world(&world, &mut render);
+
+        assert_eq!(render.ui_draw_commands().len(), 2);
+        assert!(matches!(
+            &render.ui_draw_commands()[0].kind,
+            UiDrawKind::Image { texture, tint }
+                if texture == "asset://ui/button.png" && tint.as_deref() == Some("#ffffffff")
+        ));
+        assert!(matches!(
+            &render.ui_draw_commands()[1].kind,
+            UiDrawKind::Text { value, font_size, color }
+                if value == "Play" && *font_size == 18.0 && color == "#ffffff"
+        ));
+        assert_eq!(
+            render.ui_draw_commands()[0].rect(RenderSize::new(800, 600)),
+            UiRect::new(0.0, 0.0, 128.0, 32.0)
         );
     }
 
