@@ -8,8 +8,9 @@
 
 use std::{
     any::TypeId,
-    collections::{HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     error::Error,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::Once,
 };
@@ -34,8 +35,9 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 ))]
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
-    resolve_scene_entity, CustomComponentRef, EntityRecord, PrefabDocument, ResolvedEntity,
-    SceneDocument, SceneDocumentExport, SceneEntityDocument, UiInteractionRef, UiRef, World,
+    resolve_scene_entity, CustomComponentRef, EntityRecord, LoadedScene, PrefabDocument,
+    ResolvedEntity, SceneDocument, SceneDocumentExport, SceneEntityDocument, UiInteractionRef,
+    UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -179,6 +181,69 @@ impl Resources {
             )
             .into()
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResourceFileSignature {
+    byte_len: usize,
+    hash: u64,
+}
+
+impl ResourceFileSignature {
+    fn read(path: &str, paths: &ProjectPaths) -> GameResult<Self> {
+        let resolved = paths.resolve_resource(path)?;
+        let source = platform::read_to_string(&resolved).map_err(|error| {
+            PathDiagnosticError::resource(
+                path.to_string(),
+                resolved.clone(),
+                &paths.resource_root,
+                error,
+            )
+        })?;
+
+        Ok(Self::from_source(&source))
+    }
+
+    fn from_source(source: &str) -> Self {
+        let mut hasher = DefaultHasher::new();
+        source.hash(&mut hasher);
+
+        Self {
+            byte_len: source.len(),
+            hash: hasher.finish(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SceneHotReloadState {
+    loaded_scene: LoadedScene,
+    signature: ResourceFileSignature,
+}
+
+impl SceneHotReloadState {
+    fn new(resources: &Resources, loaded_scene: LoadedScene) -> GameResult<Self> {
+        let signature = ResourceFileSignature::read(loaded_scene.source(), &resources.paths)?;
+
+        Ok(Self {
+            loaded_scene,
+            signature,
+        })
+    }
+
+    fn poll(&mut self, resources: &Resources) -> GameResult<Option<SceneDocument>> {
+        let next_signature =
+            ResourceFileSignature::read(self.loaded_scene.source(), &resources.paths)?;
+
+        if next_signature == self.signature {
+            return Ok(None);
+        }
+
+        let scene = load_scene_config(self.loaded_scene.source(), &resources.paths)?;
+        self.signature = next_signature;
+
+        Ok(Some(scene))
     }
 }
 
@@ -342,7 +407,7 @@ impl App {
         let game = G::new(&mut startup)?;
         startup.load_main_scene()?;
         let runtime_parts = startup.into_runtime_parts();
-        let adapter = Game2DAdapter::new(game, runtime_parts);
+        let adapter = Game2DAdapter::new(game, runtime_parts)?;
 
         run_desktop(
             engine,
@@ -490,6 +555,7 @@ pub struct StartupContext {
     schedule: Schedule,
     paths: ProjectPaths,
     main_scene: Option<String>,
+    loaded_main_scene: Option<LoadedScene>,
     main_scene_loaded: bool,
     input_actions: InputActions,
     clear_color: ClearColor,
@@ -514,6 +580,7 @@ impl StartupContext {
             schedule: Schedule::default(),
             paths,
             main_scene,
+            loaded_main_scene: None,
             main_scene_loaded: false,
             input_actions,
             clear_color,
@@ -583,31 +650,37 @@ impl StartupContext {
 
     fn into_runtime_parts(self) -> RuntimeParts {
         RuntimeParts {
+            assets: self.assets,
             audio: self.audio,
             audio_cache: self.audio_cache,
             world: self.world,
             render_cache: self.render_cache,
+            components: self.components,
             input_actions: self.input_actions,
             resources: Resources::new(self.paths),
             dialogue: DialogueState::default(),
             component_instances: self.component_instances,
             schedule: self.schedule,
             clear_color: self.clear_color,
+            loaded_main_scene: self.loaded_main_scene,
         }
     }
 }
 
 struct RuntimeParts {
+    assets: Assets,
     audio: AudioSystem,
     audio_cache: AudioCache,
     world: World,
     render_cache: RenderCache,
+    components: ComponentRegistry,
     input_actions: InputActions,
     resources: Resources,
     dialogue: DialogueState,
     component_instances: Vec<RuntimeComponent>,
     schedule: Schedule,
     clear_color: ClearColor,
+    loaded_main_scene: Option<LoadedScene>,
 }
 
 pub trait Component {
@@ -1526,42 +1599,85 @@ struct Game2DAdapter<G> {
     game: G,
     input: InputState,
     input_actions: InputActions,
+    assets: Assets,
     audio: AudioSystem,
     audio_cache: AudioCache,
     world: World,
     render_cache: RenderCache,
+    components: ComponentRegistry,
     resources: Resources,
     dialogue: DialogueState,
     component_instances: Vec<RuntimeComponent>,
     schedule: Schedule,
     render: RenderContext,
     frame_graph: RenderGraph,
+    main_scene_hot_reload: Option<SceneHotReloadState>,
 }
 
 impl<G: Game2D> Game2DAdapter<G> {
-    fn new(game: G, runtime_parts: RuntimeParts) -> Self {
+    fn new(game: G, runtime_parts: RuntimeParts) -> GameResult<Self> {
         let mut render = RenderContext::new(runtime_parts.clear_color);
         render_world(
             &runtime_parts.world,
             &runtime_parts.render_cache,
             &mut render,
         );
+        let main_scene_hot_reload = runtime_parts
+            .loaded_main_scene
+            .map(|scene| SceneHotReloadState::new(&runtime_parts.resources, scene))
+            .transpose()?;
 
-        Self {
+        Ok(Self {
             game,
             input: InputState::default(),
             input_actions: runtime_parts.input_actions,
+            assets: runtime_parts.assets,
             audio: runtime_parts.audio,
             audio_cache: runtime_parts.audio_cache,
             world: runtime_parts.world,
             render_cache: runtime_parts.render_cache,
+            components: runtime_parts.components,
             resources: runtime_parts.resources,
             dialogue: runtime_parts.dialogue,
             component_instances: runtime_parts.component_instances,
             schedule: runtime_parts.schedule,
             render,
             frame_graph: default_frame_render_graph(),
-        }
+            main_scene_hot_reload,
+        })
+    }
+
+    fn poll_main_scene_hot_reload(&mut self) -> GameResult<()> {
+        let Some(state) = &mut self.main_scene_hot_reload else {
+            return Ok(());
+        };
+        let Some(scene) = state.poll(&self.resources)? else {
+            return Ok(());
+        };
+
+        let prepared = prepare_scene_document(
+            state.loaded_scene.source(),
+            scene,
+            ScenePreparation {
+                replace_scene: Some(&state.loaded_scene),
+                world: &self.world,
+                paths: &self.resources.paths,
+                assets: &mut self.assets,
+                audio: &mut self.audio,
+                registry: &self.components,
+            },
+        )?;
+        let loaded_scene = apply_prepared_scene(
+            prepared,
+            Some(&state.loaded_scene),
+            &mut self.world,
+            &mut self.render_cache,
+            &mut self.audio_cache,
+            &mut self.component_instances,
+        )?;
+
+        state.loaded_scene = loaded_scene;
+        Ok(())
     }
 }
 
@@ -1581,6 +1697,9 @@ impl<G: Game2D> DesktopGame for Game2DAdapter<G> {
 
 impl<G: Game2D> Game for Game2DAdapter<G> {
     fn update(&mut self, _engine: &mut Engine, context: UpdateContext) -> EngineResult<()> {
+        self.poll_main_scene_hot_reload()
+            .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
+
         let mut frame = FrameContext {
             input: &self.input,
             input_actions: &self.input_actions,
@@ -2036,29 +2155,89 @@ fn validate_main_scene(main_scene: &str, paths: &ProjectPaths) -> GameResult<()>
 
 fn load_main_scene(main_scene: &str, startup: &mut StartupContext) -> GameResult<()> {
     let scene = load_scene_config(main_scene, &startup.paths)?;
+    let prepared = prepare_scene_document(
+        main_scene,
+        scene,
+        ScenePreparation {
+            replace_scene: None,
+            world: &startup.world,
+            paths: &startup.paths,
+            assets: &mut startup.assets,
+            audio: &mut startup.audio,
+            registry: &startup.components,
+        },
+    )?;
+    let loaded_scene = apply_prepared_scene(
+        prepared,
+        None,
+        &mut startup.world,
+        &mut startup.render_cache,
+        &mut startup.audio_cache,
+        &mut startup.component_instances,
+    )?;
+
+    startup.loaded_main_scene = Some(loaded_scene);
+
+    Ok(())
+}
+
+struct PreparedScene {
+    source: String,
+    pending_entities: Vec<PendingSceneEntity>,
+}
+
+struct ScenePreparation<'a> {
+    replace_scene: Option<&'a LoadedScene>,
+    world: &'a World,
+    paths: &'a ProjectPaths,
+    assets: &'a mut Assets,
+    audio: &'a mut AudioSystem,
+    registry: &'a ComponentRegistry,
+}
+
+struct PendingSceneEntity {
+    id: Option<Entity>,
+    entity: Entity,
+    record: EntityRecord,
+    renderer: Option<SpriteRenderer>,
+    audio: Option<AssetHandle<SoundAsset>>,
+    components: Vec<RuntimeComponent>,
+}
+
+fn prepare_scene_document(
+    source: &str,
+    scene: SceneDocument,
+    context: ScenePreparation<'_>,
+) -> GameResult<PreparedScene> {
     let mut prefab_cache = HashMap::new();
     let mut resolved_entities = Vec::new();
 
     for scene_entity in scene.entities {
         resolved_entities.push(build_scene_entity(
             scene_entity,
-            startup,
+            context.paths,
+            context.registry,
             &mut prefab_cache,
         )?);
     }
 
-    let planned_entities = plan_scene_entities(&startup.world, &resolved_entities)?;
+    let mut planning_world = context.world.clone();
+    if let Some(scene) = context.replace_scene {
+        planning_world.unload_scene(scene)?;
+    }
+
+    let planned_entities = plan_scene_entities(&planning_world, &resolved_entities)?;
     let mut pending_entities = Vec::new();
 
     for (resolved, entity) in resolved_entities.into_iter().zip(planned_entities) {
         let mut record = resolved.record;
-        let renderer = load_render_assets(&record, &mut startup.assets)?;
-        let audio = load_audio_asset(&record, &mut startup.assets, &mut startup.audio)?;
+        let renderer = load_render_assets(&record, context.assets)?;
+        let audio = load_audio_asset(&record, context.assets, context.audio)?;
         let mut components = Vec::new();
 
         for component_ref in record.custom_components.clone() {
-            let component = startup.components.instantiate(&component_ref)?;
-            if let Some(type_id) = startup.components.type_id(&component_ref.type_name) {
+            let component = context.registry.instantiate(&component_ref)?;
+            if let Some(type_id) = context.registry.type_id(&component_ref.type_name) {
                 set_custom_component_type_id_on_record(
                     &mut record,
                     &component_ref.type_name,
@@ -2078,36 +2257,66 @@ fn load_main_scene(main_scene: &str, startup: &mut StartupContext) -> GameResult
         });
     }
 
-    for pending in pending_entities {
-        let entity = match pending.id {
-            Some(entity) => {
-                startup.world.insert(entity, pending.record)?;
-                entity
-            }
-            None => startup.world.spawn(pending.record),
-        };
-        debug_assert_eq!(entity, pending.entity);
-
-        if let Some(renderer) = pending.renderer {
-            startup.render_cache.insert(entity, renderer);
-        }
-        if let Some(audio) = pending.audio {
-            startup.audio_cache.insert(entity, audio);
-        }
-
-        startup.component_instances.extend(pending.components);
-    }
-
-    Ok(())
+    Ok(PreparedScene {
+        source: source.to_string(),
+        pending_entities,
+    })
 }
 
-struct PendingSceneEntity {
-    id: Option<Entity>,
-    entity: Entity,
-    record: EntityRecord,
-    renderer: Option<SpriteRenderer>,
-    audio: Option<AssetHandle<SoundAsset>>,
-    components: Vec<RuntimeComponent>,
+fn apply_prepared_scene(
+    prepared: PreparedScene,
+    replace_scene: Option<&LoadedScene>,
+    world: &mut World,
+    render_cache: &mut RenderCache,
+    audio_cache: &mut AudioCache,
+    component_instances: &mut Vec<RuntimeComponent>,
+) -> GameResult<LoadedScene> {
+    let resolved_entities = prepared
+        .pending_entities
+        .iter()
+        .map(|pending| ResolvedEntity {
+            id: pending.id,
+            prefab: None,
+            record: pending.record.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let loaded_scene = match replace_scene {
+        Some(scene) => world.replace_scene_resolved(scene, resolved_entities)?,
+        None => world.load_scene_resolved(prepared.source.clone(), resolved_entities)?,
+    };
+
+    if let Some(scene) = replace_scene {
+        remove_runtime_scene_entities(scene, render_cache, audio_cache, component_instances);
+    }
+
+    for pending in prepared.pending_entities {
+        debug_assert!(loaded_scene.entities().contains(&pending.entity));
+
+        if let Some(renderer) = pending.renderer {
+            render_cache.insert(pending.entity, renderer);
+        }
+        if let Some(audio) = pending.audio {
+            audio_cache.insert(pending.entity, audio);
+        }
+
+        component_instances.extend(pending.components);
+    }
+
+    Ok(loaded_scene)
+}
+
+fn remove_runtime_scene_entities(
+    scene: &LoadedScene,
+    render_cache: &mut RenderCache,
+    audio_cache: &mut AudioCache,
+    component_instances: &mut Vec<RuntimeComponent>,
+) {
+    let entities = scene.entities().iter().copied().collect::<HashSet<_>>();
+
+    render_cache.retain(|entity, _| !entities.contains(entity));
+    audio_cache.retain(|entity, _| !entities.contains(entity));
+    component_instances.retain(|component| !entities.contains(&component.entity));
 }
 
 fn plan_scene_entities(
@@ -2181,21 +2390,18 @@ fn load_prefab_config_cached(
 
 fn build_scene_entity(
     entity: SceneEntityDocument,
-    startup: &mut StartupContext,
+    paths: &ProjectPaths,
+    registry: &ComponentRegistry,
     prefab_cache: &mut HashMap<String, PrefabDocument>,
 ) -> GameResult<ResolvedEntity> {
     let prefab = match entity.prefab.as_deref() {
-        Some(prefab_path) => Some(load_prefab_config_cached(
-            prefab_path,
-            &startup.paths,
-            prefab_cache,
-        )?),
+        Some(prefab_path) => Some(load_prefab_config_cached(prefab_path, paths, prefab_cache)?),
         None => None,
     };
 
     let resolved = resolve_scene_entity(entity, prefab)?;
-    validate_custom_components(&resolved.record, &startup.components)?;
-    validate_data_refs(&resolved.record, &startup.paths)?;
+    validate_custom_components(&resolved.record, registry)?;
+    validate_data_refs(&resolved.record, paths)?;
 
     Ok(resolved)
 }
@@ -3140,7 +3346,8 @@ mod tests {
                 calls: calls.clone(),
             },
             startup.into_runtime_parts(),
-        );
+        )
+        .expect("adapter");
         let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
 
         let first = engine.tick(1.0).expect("first frame");
@@ -3159,6 +3366,69 @@ mod tests {
                 "game",
                 "post_update"
             ]
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn runtime_hot_reloads_changed_main_scene_before_game_update() {
+        let mut startup = startup_with_scene(
+            "hot-reload.scene.toml",
+            r#"
+            [[entities]]
+            id = 1
+            name = "Old"
+            "#,
+        );
+        startup.load_main_scene().expect("load initial scene");
+        let paths = startup.paths.clone();
+        let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        type ObservedEntities =
+            std::rc::Rc<std::cell::RefCell<Vec<(Option<Entity>, Option<Entity>)>>>;
+
+        struct HotReloadGame {
+            observed: ObservedEntities,
+        }
+
+        impl Game2D for HotReloadGame {
+            fn new(_context: &mut StartupContext) -> GameResult<Self> {
+                unreachable!("test constructs game directly")
+            }
+
+            fn update(&mut self, context: &mut FrameContext<'_>) -> GameResult<()> {
+                let world = context.world();
+                self.observed
+                    .borrow_mut()
+                    .push((world.entity_by_name("New"), world.entity_by_name("Old")));
+                Ok(())
+            }
+        }
+
+        let mut adapter = Game2DAdapter::new(
+            HotReloadGame {
+                observed: observed.clone(),
+            },
+            startup.into_runtime_parts(),
+        )
+        .expect("adapter");
+        let mut engine = Engine::new(seishin_core::EngineConfig::default()).expect("engine");
+
+        write_scene(
+            &paths,
+            "hot-reload.scene.toml",
+            r#"
+            [[entities]]
+            id = 1
+            name = "New"
+            "#,
+        );
+
+        let frame = engine.tick(1.0).expect("frame");
+        adapter.update(&mut engine, frame).expect("update");
+
+        assert_eq!(
+            observed.borrow().as_slice(),
+            [(Some(EntityId::new(1)), None)]
         );
     }
 
