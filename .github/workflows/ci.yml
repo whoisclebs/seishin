@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout
@@ -31,7 +31,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
+
+      - name: Install Web Target
+        if: runner.os == 'Linux'
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
@@ -49,4 +52,5 @@ jobs:
         run: cargo build --workspace
 
       - name: Build Web Example
+        if: runner.os == 'Linux'
         run: cargo build --target wasm32-unknown-unknown -p seishin_basic_2d
