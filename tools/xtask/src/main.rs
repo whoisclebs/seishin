@@ -9,12 +9,13 @@ use std::{
 fn main() -> ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let Some(task) = args.first() else {
-        eprintln!("usage: cargo run -p xtask -- <check|web-build|web-serve>");
+        eprintln!("usage: cargo run -p xtask -- <check|dependency-audit|web-build|web-serve>");
         return ExitCode::FAILURE;
     };
 
     match task.as_str() {
         "check" => run("cargo", &["test"]),
+        "dependency-audit" => dependency_audit(),
         "web-build" => web_build(&args[1..]),
         "web-serve" => web_serve(&args[1..]),
         _ => {
@@ -22,6 +23,177 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn dependency_audit() -> ExitCode {
+    println!("{}", render_dependency_audit());
+    ExitCode::SUCCESS
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DependencyAuditEntry {
+    name: &'static str,
+    category: &'static str,
+    recommendation: &'static str,
+    notes: &'static str,
+}
+
+fn dependency_audit_entries() -> &'static [DependencyAuditEntry] {
+    &[
+        DependencyAuditEntry {
+            name: "bytemuck",
+            category: "backend",
+            recommendation: "keep",
+            notes: "Needed for renderer vertex/uniform POD casts; gated by render backend.",
+        },
+        DependencyAuditEntry {
+            name: "image",
+            category: "convenience",
+            recommendation: "keep optional, evaluate internal replacement",
+            notes:
+                "Only PNG decoding is enabled; candidate for a tiny format-specific loader later.",
+        },
+        DependencyAuditEntry {
+            name: "js-sys",
+            category: "backend",
+            recommendation: "keep web-only",
+            notes: "Used for browser byte buffers during web asset preload.",
+        },
+        DependencyAuditEntry {
+            name: "kira",
+            category: "backend",
+            recommendation: "keep optional native-only",
+            notes: "Provides desktop audio playback; target-gated away from wasm.",
+        },
+        DependencyAuditEntry {
+            name: "pollster",
+            category: "convenience",
+            recommendation: "evaluate internal replacement",
+            notes: "Small helper for blocking async runtime/renderer initialization.",
+        },
+        DependencyAuditEntry {
+            name: "raw-window-handle",
+            category: "backend",
+            recommendation: "keep",
+            notes: "Required to pass native window/display handles into the renderer backend.",
+        },
+        DependencyAuditEntry {
+            name: "serde",
+            category: "serialization/config",
+            recommendation: "keep",
+            notes: "Core scene/resource/config serialization path.",
+        },
+        DependencyAuditEntry {
+            name: "serde_json",
+            category: "tooling",
+            recommendation: "keep",
+            notes: "Used for generated web manifests in xtask/runtime preload.",
+        },
+        DependencyAuditEntry {
+            name: "toml",
+            category: "serialization/config",
+            recommendation: "keep",
+            notes: "Current data-driven scene/resource format.",
+        },
+        DependencyAuditEntry {
+            name: "tracing",
+            category: "tooling",
+            recommendation: "keep optional",
+            notes: "Facade logging hook; behind the logging feature.",
+        },
+        DependencyAuditEntry {
+            name: "tracing-subscriber",
+            category: "tooling",
+            recommendation: "keep optional",
+            notes: "Default desktop logging setup; behind the logging feature.",
+        },
+        DependencyAuditEntry {
+            name: "wasm-bindgen",
+            category: "backend",
+            recommendation: "keep web-only",
+            notes: "Required for wasm startup and browser API bindings.",
+        },
+        DependencyAuditEntry {
+            name: "wasm-bindgen-futures",
+            category: "backend",
+            recommendation: "keep web-only",
+            notes: "Used for async browser fetch/preload bridging.",
+        },
+        DependencyAuditEntry {
+            name: "web-sys",
+            category: "backend",
+            recommendation: "keep web-only",
+            notes: "Browser window/canvas/audio/fetch APIs.",
+        },
+        DependencyAuditEntry {
+            name: "wgpu",
+            category: "backend",
+            recommendation: "keep optional",
+            notes: "Primary renderer backend; gated by render-wgpu.",
+        },
+        DependencyAuditEntry {
+            name: "winit",
+            category: "backend",
+            recommendation: "keep optional",
+            notes: "Desktop/web window and event loop integration; gated by runtime features.",
+        },
+    ]
+}
+
+fn render_dependency_audit() -> String {
+    let mut output = String::new();
+    output.push_str("# Dependency Audit\n\n");
+    output.push_str("| dependency | category | recommendation | notes |\n");
+    output.push_str("| --- | --- | --- | --- |\n");
+    for entry in dependency_audit_entries() {
+        output.push_str(&format!(
+            "| `{}` | {} | {} | {} |\n",
+            entry.name, entry.category, entry.recommendation, entry.notes
+        ));
+    }
+    output.push_str("\nFeature checks:\n");
+    output
+        .push_str("- `seishin_no_default_wasm` keeps a no-default build in the workspace tests.\n");
+    output.push_str("- `seishin_audio/kira-backend` is optional and native-target gated.\n");
+    output.push_str(
+        "- `seishin_audio/web` carries browser audio bindings separately from native audio.\n",
+    );
+    output.push_str("- CI builds the wasm example once on Linux while desktop validation runs on Linux, Windows, and macOS.\n");
+    output
+}
+
+#[cfg(test)]
+fn dependency_names_from_manifest_source(source: &str) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    let mut in_dependencies = false;
+
+    for line in source.lines() {
+        let line = line.split_once('#').map_or(line, |(line, _)| line).trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            let section = line.trim_matches(['[', ']']);
+            in_dependencies = section == "dependencies" || section.ends_with(".dependencies");
+            continue;
+        }
+
+        if !in_dependencies {
+            continue;
+        }
+
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let name = name.trim().trim_matches('"');
+        if name.starts_with("seishin") || value.contains("path") {
+            continue;
+        }
+        names.insert(name.to_string());
+    }
+
+    names.into_iter().collect()
 }
 
 fn web_build(args: &[String]) -> ExitCode {
@@ -418,7 +590,10 @@ fn content_type(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::package_name_from_manifest_source;
+    use super::{
+        dependency_audit_entries, dependency_names_from_manifest_source,
+        package_name_from_manifest_source,
+    };
 
     #[test]
     fn package_name_is_read_from_package_section_only() {
@@ -438,5 +613,25 @@ mod tests {
             package_name_from_manifest_source(manifest),
             Some("seishin_basic_2d".to_string())
         );
+    }
+
+    #[test]
+    fn dependency_audit_covers_direct_external_dependencies() {
+        let root_manifest = include_str!("../../../Cargo.toml");
+        let assets_manifest = include_str!("../../../crates/seishin_assets/Cargo.toml");
+        let dependencies = dependency_names_from_manifest_source(root_manifest)
+            .into_iter()
+            .chain(dependency_names_from_manifest_source(assets_manifest))
+            .collect::<std::collections::BTreeSet<_>>();
+        let audited = dependency_audit_entries()
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        let missing = dependencies
+            .difference(&audited)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(missing, Vec::<String>::new());
     }
 }
