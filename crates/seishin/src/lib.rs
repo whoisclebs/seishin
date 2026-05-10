@@ -1,5 +1,6 @@
 mod app;
 mod platform;
+mod tilemap;
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub use platform::preload_web_resources;
@@ -32,6 +33,9 @@ pub use seishin_world::{
     SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
     SpriteRef, TagsDocument, UiAnchor, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     World, WorldError,
+};
+pub use tilemap::{
+    can_entity_occupy_tilemap, entity_sprite_aabb, intersects_entities_with_tag, TileMapQuery,
 };
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -109,13 +113,15 @@ pub mod world {
 
 pub mod prelude {
     pub use crate::{
-        component, component_factory, run, ActiveDialogue, App, Assets, Camera2DHandle,
+        can_entity_occupy_tilemap, component, component_factory, entity_sprite_aabb,
+        intersects_entities_with_tag, run, ActiveDialogue, App, Assets, Camera2DHandle,
         CharacterData, CharacterDialogueData, Commands, Component, ComponentDefinition,
         ComponentFactoryDefinition, ComponentRegistry, DialogueData, DialogueState, Entity,
         EntityMut, FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions,
         InputQuery, LogLevel, Plugin, Query, RenderContext, ResourceToml, Resources, Schedule,
         SchedulePhase, SpriteBuilder, SpriteBundle, SpriteRenderer, StartupContext, Texture,
-        UiDrawCommand, UiDrawKind, UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
+        TileMapQuery, UiDrawCommand, UiDrawKind, UiElement, UiRect, Vec2, World, WorldComponentExt,
+        WorldError,
     };
     pub use seishin_assets::{AssetBundle, AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{
@@ -126,7 +132,7 @@ pub mod prelude {
         Engine, EngineConfig, EngineError, EngineResult, EntityId, Game, Transform2D, UpdateContext,
     };
     pub use seishin_input::{InputState, KeyCode, TouchPoint};
-    pub use seishin_physics::Collider2D;
+    pub use seishin_physics::{Aabb, Collider2D};
     pub use seishin_render::{
         Camera2D, ClearColor, RenderError, RenderSize, RenderState, RenderTargetDescriptor,
         RenderTargetId, RenderTargetKind, Sprite, SpriteBatch, SpriteMaterial, SpriteRegion,

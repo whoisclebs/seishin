@@ -1,6 +1,6 @@
 use seishin::prelude::*;
 
-use super::map_state::TileMapState;
+use super::map_state::{can_actor_occupy, TileMapState};
 
 const DEFAULT_PLAYER_SPEED: f32 = 180.0;
 const DEFAULT_STEP_SOUND_COOLDOWN_SECONDS: f32 = 0.18;
@@ -48,38 +48,36 @@ impl PlayerController {
             movement
         };
 
-        let current = frame
-            .world()
-            .transform(entity)
-            .map(|transform| Vec2::new(transform.x, transform.y))
-            .unwrap_or(Vec2::ZERO);
-
         let dt = frame.delta_seconds() * self.speed;
-        let candidate = Vec2::new(current.x + normalized.x * dt, current.y + normalized.y * dt);
-        let mut final_position = current;
 
-        match TileMapState::from_world(&frame.world()) {
-            Some(map) => {
-                let candidate_x = candidate.x;
-                let candidate_y = candidate.y;
+        let (current, final_position) = {
+            let world = frame.world();
+            let current = world
+                .transform(entity)
+                .map(|transform| Vec2::new(transform.x, transform.y))
+                .unwrap_or(Vec2::ZERO);
+            let candidate = Vec2::new(current.x + normalized.x * dt, current.y + normalized.y * dt);
+            let map = TileMapState::from_world(&world);
+            let mut final_position = current;
 
-                if map.is_walkable(candidate_x, current.y) {
-                    final_position.x = candidate_x;
-                }
-                if map.is_walkable(final_position.x, candidate_y) {
-                    final_position.y = candidate_y;
-                }
+            let candidate_x = Vec2::new(candidate.x, current.y);
+            if can_actor_occupy(&world, map.as_ref(), entity, candidate_x) {
+                final_position.x = candidate.x;
             }
-            None => {
-                final_position = candidate;
+
+            let candidate_y = Vec2::new(final_position.x, candidate.y);
+            if can_actor_occupy(&world, map.as_ref(), entity, candidate_y) {
+                final_position.y = candidate.y;
             }
-        }
+
+            (current, final_position)
+        };
 
         if (final_position.x - current.x).abs() > f32::EPSILON
             || (final_position.y - current.y).abs() > f32::EPSILON
         {
             frame
-                .world()
+                .commands()
                 .set_position(entity, final_position.x, final_position.y);
             self.play_footstep(frame, entity)?;
         }

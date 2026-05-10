@@ -18,7 +18,7 @@ x = 96.0
 y = 96.0
 
 [entities.tags]
-values = ["player"]
+values = ["player", "solid_actor"]
 
 [entities.data]
 character = "res://data/characters/player.toml"
@@ -35,7 +35,7 @@ y = 288.0
 sort_order = 12
 
 [entities.tags]
-values = ["npc", "character"]
+values = ["npc", "character", "solid_actor"]
 
 [entities.data]
 character = "res://data/characters/merchant.toml"
@@ -52,7 +52,7 @@ y = 96.0
 sort_order = 14
 
 [entities.tags]
-values = ["npc", "character"]
+values = ["npc", "character", "solid_actor"]
 
 [entities.data]
 character = "res://data/characters/goblin.toml"

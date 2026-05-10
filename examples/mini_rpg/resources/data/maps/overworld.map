@@ -1,24 +1,30 @@
 tile_size = 48.0
 
+[tileset]
+atlas = "asset://sprites/open_tileset.png"
+tile_width = 16
+tile_height = 16
+columns = 10
+
 [legend.0]
 name = "grass"
-texture = "asset://sprites/tiles/grass.png"
-blocked = false
+atlas_index = 11
+collision = "none"
 
 [legend.1]
 name = "stone_wall"
-texture = "asset://sprites/tiles/wall.png"
-blocked = true
+atlas_index = 44
+collision = "solid"
 
 [legend.2]
 name = "water"
-texture = "asset://sprites/tiles/water.png"
-blocked = true
+atlas_index = 0
+collision = "solid"
 
 [legend.3]
 name = "dirt_path"
-texture = "asset://sprites/tiles/path.png"
-blocked = false
+atlas_index = 77
+collision = "none"
 
 [tiles]
 rows = [

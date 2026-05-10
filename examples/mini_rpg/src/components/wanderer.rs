@@ -1,6 +1,6 @@
 use seishin::prelude::*;
 
-use super::map_state::TileMapState;
+use super::map_state::{can_actor_occupy, TileMapState};
 
 #[derive(Debug)]
 pub struct WandererController {
@@ -23,21 +23,6 @@ impl WandererController {
 
 impl Component for WandererController {
     fn update(&mut self, entity: Entity, context: &mut FrameContext<'_>) -> GameResult<()> {
-        let map = match TileMapState::from_world(&context.world()) {
-            Some(map) => map,
-            None => {
-                self.direction_timer += context.delta_seconds();
-                if self.direction_timer >= 2.0 {
-                    self.direction_timer = 0.0;
-                    self.direction *= -1.0;
-                }
-
-                let delta_x = self.direction * self.speed * context.delta_seconds();
-                context.world().translate(entity, Vec2::new(delta_x, 0.0));
-                return Ok(());
-            }
-        };
-
         self.direction_timer += context.delta_seconds();
         if self.direction_timer >= 2.0 {
             self.direction_timer = 0.0;
@@ -45,15 +30,26 @@ impl Component for WandererController {
         }
 
         let delta_x = self.direction * self.speed * context.delta_seconds();
-        let current = context
-            .world()
-            .transform(entity)
-            .map(|transform| Vec2::new(transform.x, transform.y))
-            .unwrap_or(Vec2::ZERO);
-        let candidate = Vec2::new(current.x + delta_x, current.y);
+        let (current, candidate, can_move) = {
+            let world = context.world();
+            let current = world
+                .transform(entity)
+                .map(|transform| Vec2::new(transform.x, transform.y))
+                .unwrap_or(Vec2::ZERO);
+            let candidate = Vec2::new(current.x + delta_x, current.y);
+            let map = TileMapState::from_world(&world);
+            let can_move = can_actor_occupy(&world, map.as_ref(), entity, candidate);
 
-        if map.is_walkable(candidate.x, current.y) {
-            context.world().set_position(entity, candidate.x, current.y);
+            (current, candidate, can_move)
+        };
+
+        if can_move {
+            context
+                .commands()
+                .set_position(entity, candidate.x, current.y);
+        } else {
+            self.direction *= -1.0;
+            self.direction_timer = 0.0;
         }
 
         Ok(())
