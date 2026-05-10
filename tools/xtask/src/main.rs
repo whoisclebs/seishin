@@ -9,19 +9,310 @@ use std::{
 fn main() -> ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let Some(task) = args.first() else {
-        eprintln!("usage: cargo run -p xtask -- <check|dependency-audit|web-build|web-serve>");
+        eprintln!(
+            "usage: cargo run -p xtask -- <check|check-project|dependency-audit|list-components|web-build|web-serve>"
+        );
         return ExitCode::FAILURE;
     };
 
     match task.as_str() {
         "check" => run("cargo", &["test"]),
+        "check-project" => check_project(&args[1..]),
         "dependency-audit" => dependency_audit(),
+        "list-components" => list_components(&args[1..]),
         "web-build" => web_build(&args[1..]),
         "web-serve" => web_serve(&args[1..]),
         _ => {
             eprintln!("unknown xtask command: {task}");
             ExitCode::FAILURE
         }
+    }
+}
+
+fn check_project(args: &[String]) -> ExitCode {
+    let Some(example) = parse_example(args) else {
+        eprintln!("usage: cargo run -p xtask -- check-project --example <name>");
+        return ExitCode::FAILURE;
+    };
+
+    match validate_example_project(&example) {
+        Ok(report) => {
+            println!("project check ok: examples/{example}");
+            println!(
+                "registered components: {}",
+                format_list(&report.registered_components)
+            );
+            println!("scene components: {}", format_list(&report.used_components));
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("project check failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn list_components(args: &[String]) -> ExitCode {
+    let Some(example) = parse_example(args) else {
+        eprintln!("usage: cargo run -p xtask -- list-components --example <name>");
+        return ExitCode::FAILURE;
+    };
+
+    match registered_components_from_project(&PathBuf::from("examples").join(&example)) {
+        Ok(components) => {
+            for component in components {
+                println!("{component}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("component listing failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectValidationReport {
+    registered_components: Vec<String>,
+    used_components: Vec<String>,
+}
+
+fn validate_example_project(example: &str) -> Result<ProjectValidationReport, String> {
+    let example_dir = PathBuf::from("examples").join(example);
+    if !example_dir.join("Cargo.toml").is_file() {
+        return Err(format!("example '{example}' not found"));
+    }
+    if !example_dir.join("Seishin.toml").is_file() {
+        return Err(format!("examples/{example} is missing Seishin.toml"));
+    }
+
+    let registered_components = registered_components_from_project(&example_dir)?;
+    let used_components = custom_component_types_from_project(&example_dir)?;
+    let missing = missing_components(&registered_components, &used_components);
+
+    if !missing.is_empty() {
+        return Err(format!(
+            "unregistered components: {}. registered components: {}",
+            format_list(&missing),
+            format_list(&registered_components)
+        ));
+    }
+
+    Ok(ProjectValidationReport {
+        registered_components,
+        used_components,
+    })
+}
+
+fn registered_components_from_project(example_dir: &Path) -> Result<Vec<String>, String> {
+    let main_path = example_dir.join("src").join("main.rs");
+    let main_source = fs::read_to_string(&main_path)
+        .map_err(|error| format!("failed to read {}: {error}", main_path.display()))?;
+    let components_dir = example_dir.join("src").join("components");
+
+    registered_components_from_sources(&main_source, |module| {
+        let module_path = components_dir.join(format!("{module}.rs"));
+        fs::read_to_string(module_path).ok()
+    })
+}
+
+fn custom_component_types_from_project(example_dir: &Path) -> Result<Vec<String>, String> {
+    let mut components = std::collections::BTreeSet::new();
+    collect_custom_component_types(&example_dir.join("resources"), &mut components)?;
+    Ok(components.into_iter().collect())
+}
+
+fn collect_custom_component_types(
+    root: &Path,
+    output: &mut std::collections::BTreeSet<String>,
+) -> Result<(), String> {
+    if !root.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_custom_component_types(&path, output)?;
+            continue;
+        }
+
+        if path.extension().and_then(|extension| extension.to_str()) != Some("toml") {
+            continue;
+        }
+
+        let source = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        output.extend(custom_component_types_from_toml_source(&source));
+    }
+
+    Ok(())
+}
+
+fn registered_components_from_sources<F, S>(
+    main_source: &str,
+    mut module_source: F,
+) -> Result<Vec<String>, String>
+where
+    F: FnMut(&str) -> Option<S>,
+    S: AsRef<str>,
+{
+    let modules = component_modules_from_main_source(main_source);
+    let mut components = Vec::new();
+
+    for module in modules {
+        let source = module_source(&module)
+            .ok_or_else(|| format!("component module '{module}' was registered but not found"))?;
+        let names = component_names_from_module_source(source.as_ref());
+        if names.is_empty() {
+            return Err(format!(
+                "component module '{module}' does not expose a registered component name"
+            ));
+        }
+        extend_unique(&mut components, names);
+    }
+
+    Ok(components)
+}
+
+fn component_modules_from_main_source(source: &str) -> Vec<String> {
+    let marker = ".add_component(";
+    let component_marker = "components::";
+    let mut modules = Vec::new();
+    let mut remaining = source;
+
+    while let Some(index) = remaining.find(marker) {
+        let after_call = &remaining[index + marker.len()..];
+        if let Some(component_index) = after_call.find(component_marker) {
+            let after_components = &after_call[component_index + component_marker.len()..];
+            let module = take_rust_ident(after_components);
+            if !module.is_empty() && !modules.contains(&module) {
+                modules.push(module);
+            }
+        }
+        if after_call.is_empty() {
+            break;
+        }
+        remaining = &after_call[1..];
+    }
+
+    modules
+}
+
+fn component_names_from_module_source(source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for marker in [
+        "component_factory(",
+        "register_component_factory(",
+        "register_component(",
+    ] {
+        extend_unique(&mut names, quoted_strings_after(source, marker));
+    }
+    names
+}
+
+fn custom_component_types_from_toml_source(source: &str) -> Vec<String> {
+    let mut components = std::collections::BTreeSet::new();
+    let mut in_custom_component_section = false;
+
+    for raw_line in source.lines() {
+        let line = raw_line
+            .split_once('#')
+            .map_or(raw_line, |(line, _)| line)
+            .trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            let section = line.trim_matches(['[', ']']);
+            in_custom_component_section =
+                section.starts_with("components.") || section.contains(".components.");
+            continue;
+        }
+
+        if !in_custom_component_section {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "type" {
+            continue;
+        }
+        if let Some(component) = parse_quoted_string(value.trim()) {
+            components.insert(component);
+        }
+    }
+
+    components.into_iter().collect()
+}
+
+fn missing_components(registered: &[String], used: &[String]) -> Vec<String> {
+    let registered = registered
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    used.iter()
+        .filter(|component| !registered.contains(component.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn quoted_strings_after(source: &str, marker: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut remaining = source;
+
+    while let Some(index) = remaining.find(marker) {
+        let after_marker = &remaining[index + marker.len()..];
+        let Some(value_start) = after_marker.find('"') else {
+            if after_marker.is_empty() {
+                break;
+            }
+            remaining = &after_marker[1..];
+            continue;
+        };
+        let after_quote = &after_marker[value_start + 1..];
+        let Some(value_end) = after_quote.find('"') else {
+            if after_marker.is_empty() {
+                break;
+            }
+            remaining = &after_marker[1..];
+            continue;
+        };
+        let value = after_quote[..value_end].to_string();
+        if !values.contains(&value) {
+            values.push(value);
+        }
+        remaining = &after_quote[value_end + 1..];
+    }
+
+    values
+}
+
+fn take_rust_ident(source: &str) -> String {
+    source
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+        .collect()
+}
+
+fn extend_unique(output: &mut Vec<String>, values: Vec<String>) {
+    for value in values {
+        if !output.contains(&value) {
+            output.push(value);
+        }
+    }
+}
+
+fn format_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(", ")
     }
 }
 
@@ -642,5 +933,74 @@ mod tests {
 
         assert!(audit.contains("Image format policy:"));
         assert!(audit.contains("PNG"));
+    }
+
+    #[test]
+    fn registered_components_are_read_from_component_modules() {
+        let main_source = r#"
+            fn main() {
+                App::discover_project()
+                    .add_component(components::map_bootstrap::new())
+                    .add_component(components::player_camera::new())
+                    .run();
+            }
+        "#;
+        let mut modules = std::collections::BTreeMap::new();
+        modules.insert(
+            "map_bootstrap",
+            r#"pub fn new() -> impl ComponentDefinition {
+                component_factory("MapBootstrap", map_bootstrap_factory)
+            }"#,
+        );
+        modules.insert(
+            "player_camera",
+            r#"pub fn new() -> impl ComponentDefinition {
+                |app: &mut StartupContext| {
+                    app.register_component_factory("PlayerCamera", player_camera_factory)?;
+                    Ok(())
+                }
+            }"#,
+        );
+
+        assert_eq!(
+            super::registered_components_from_sources(main_source, |name| modules
+                .get(name)
+                .copied()),
+            Ok(vec!["MapBootstrap".to_string(), "PlayerCamera".to_string()])
+        );
+    }
+
+    #[test]
+    fn custom_component_types_are_read_only_from_component_sections() {
+        let source = r#"
+            [input.actions.move]
+            type = "axis2d"
+
+            [components.player_controller]
+            type = "PlayerController"
+
+            [entities.components.camera]
+            type = "PlayerCamera"
+        "#;
+
+        assert_eq!(
+            super::custom_component_types_from_toml_source(source),
+            vec!["PlayerCamera".to_string(), "PlayerController".to_string()]
+        );
+    }
+
+    #[test]
+    fn project_validation_reports_unregistered_scene_components() {
+        let registered = vec!["PlayerController".to_string()];
+        let used = vec![
+            "PlayerCamera".to_string(),
+            "PlayerController".to_string(),
+            "WandererController".to_string(),
+        ];
+
+        assert_eq!(
+            super::missing_components(&registered, &used),
+            vec!["PlayerCamera".to_string(), "WandererController".to_string()]
+        );
     }
 }
