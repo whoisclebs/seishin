@@ -51,4 +51,4 @@ wasm-bindgen-futures = "0.4.70"
 wasm-bindgen = "0.2.120"
 web-sys = "0.3.97"
 wgpu = { version = "0.19.4", features = ["webgl"] }
-winit = "0.29.15"
+winit = "0.30.13"
