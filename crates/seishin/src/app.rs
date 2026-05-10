@@ -1106,6 +1106,15 @@ enum Command {
         entity: Entity,
         key: String,
     },
+    LoadScene {
+        path: String,
+    },
+    InstantiateScene {
+        path: String,
+    },
+    SaveWorld {
+        path: String,
+    },
 }
 
 impl Commands {
@@ -1145,26 +1154,64 @@ impl Commands {
         self
     }
 
+    pub fn load_scene(&mut self, path: impl Into<String>) -> &mut Self {
+        self.pending.push(Command::LoadScene { path: path.into() });
+        self
+    }
+
+    pub fn instantiate_scene(&mut self, path: impl Into<String>) -> &mut Self {
+        self.pending
+            .push(Command::InstantiateScene { path: path.into() });
+        self
+    }
+
+    pub fn save_world(&mut self, path: impl Into<String>) -> &mut Self {
+        self.pending.push(Command::SaveWorld { path: path.into() });
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
-    fn apply(&mut self, world: &mut World) -> GameResult<()> {
+    fn apply(&mut self, mut context: CommandApplyContext<'_>) -> GameResult<()> {
         for command in std::mem::take(&mut self.pending) {
             match command {
-                Command::SetPosition { entity, x, y } => world.set_position(entity, x, y)?,
-                Command::Translate { entity, x, y } => world.translate(entity, x, y)?,
+                Command::SetPosition { entity, x, y } => {
+                    context.world.set_position(entity, x, y)?
+                }
+                Command::Translate { entity, x, y } => context.world.translate(entity, x, y)?,
                 Command::SetDataRef { entity, key, value } => {
-                    world.set_data_ref(entity, key, value)?;
+                    context.world.set_data_ref(entity, key, value)?;
                 }
                 Command::RemoveDataRef { entity, key } => {
-                    world.remove_data_ref(entity, &key)?;
+                    context.world.remove_data_ref(entity, &key)?;
+                }
+                Command::LoadScene { path } => {
+                    load_runtime_scene(&path, &mut context)?;
+                }
+                Command::InstantiateScene { path } => {
+                    instantiate_runtime_scene(&path, &mut context)?;
+                }
+                Command::SaveWorld { path } => {
+                    context.resources.save_world(path, context.world)?;
                 }
             }
         }
 
         Ok(())
     }
+}
+
+struct CommandApplyContext<'a> {
+    world: &'a mut World,
+    resources: &'a Resources,
+    assets: &'a mut Assets,
+    audio: &'a mut AudioSystem,
+    render_cache: &'a mut RenderCache,
+    audio_cache: &'a mut AudioCache,
+    components: &'a ComponentRegistry,
+    component_instances: &'a mut Vec<RuntimeComponent>,
 }
 
 #[derive(Default)]
@@ -1806,6 +1853,10 @@ impl FrameContext<'_> {
 
     pub fn resources(&self) -> &Resources {
         self.resources
+    }
+
+    pub fn save_world(&self, path: impl AsRef<str>) -> GameResult<SceneDocumentExport> {
+        self.resources.save_world(path, self.world)
     }
 
     pub fn dialogue(&mut self) -> &mut DialogueState {
@@ -2520,7 +2571,16 @@ impl<G: Game2D> Game for Game2DAdapter<G> {
         }
 
         commands
-            .apply(&mut self.world)
+            .apply(CommandApplyContext {
+                world: &mut self.world,
+                resources: &self.resources,
+                assets: &mut self.assets,
+                audio: &mut self.audio,
+                render_cache: &mut self.render_cache,
+                audio_cache: &mut self.audio_cache,
+                components: &self.components,
+                component_instances: &mut self.component_instances,
+            })
             .map_err(|error| seishin_core::EngineError::Runtime(error.to_string()))?;
 
         run_render_frame_graph(
@@ -2994,16 +3054,16 @@ struct PendingSceneEntity {
     components: Vec<RuntimeComponent>,
 }
 
-fn prepare_scene_document(
-    source: &str,
+fn resolve_scene_document_entities(
     scene: SceneDocument,
-    context: ScenePreparation<'_>,
-) -> GameResult<PreparedScene> {
+    paths: &ProjectPaths,
+    registry: &ComponentRegistry,
+) -> GameResult<Vec<ResolvedEntity>> {
     let mut prefab_cache = HashMap::new();
     let mut resolved_entities = Vec::new();
 
     for (map_index, scene_map) in scene.maps.into_iter().enumerate() {
-        let source = load_scene_map_source(&scene_map.source, context.paths)?;
+        let source = load_scene_map_source(&scene_map.source, paths)?;
         let mut parsed_map = parse_tile_map(&source)?;
         if let Some(tile_size) = scene_map.tile_size {
             if tile_size <= 0.0 {
@@ -3019,8 +3079,8 @@ fn prepare_scene_document(
         for map_entity in tile_map_to_scene_entities(&parsed_map, map_index) {
             resolved_entities.push(build_scene_entity(
                 map_entity,
-                context.paths,
-                context.registry,
+                paths,
+                registry,
                 &mut prefab_cache,
             )?);
         }
@@ -3029,11 +3089,22 @@ fn prepare_scene_document(
     for scene_entity in scene.entities {
         resolved_entities.push(build_scene_entity(
             scene_entity,
-            context.paths,
-            context.registry,
+            paths,
+            registry,
             &mut prefab_cache,
         )?);
     }
+
+    Ok(resolved_entities)
+}
+
+fn prepare_scene_document(
+    source: &str,
+    scene: SceneDocument,
+    context: ScenePreparation<'_>,
+) -> GameResult<PreparedScene> {
+    let resolved_entities =
+        resolve_scene_document_entities(scene, context.paths, context.registry)?;
 
     let mut planning_world = context.world.clone();
     if let Some(scene) = context.replace_scene {
@@ -3118,6 +3189,159 @@ fn apply_prepared_scene(
     }
 
     Ok(loaded_scene)
+}
+
+struct PendingInstancedSceneEntity {
+    source_entity: Entity,
+    renderer: Option<SpriteRenderer>,
+    audio: Option<AssetHandle<SoundAsset>>,
+    components: Vec<Box<dyn Component>>,
+}
+
+fn load_runtime_scene(
+    path: &str,
+    context: &mut CommandApplyContext<'_>,
+) -> GameResult<LoadedScene> {
+    let scene = load_scene_config(path, &context.resources.paths)?;
+    let prepared = prepare_scene_document(
+        path,
+        scene,
+        ScenePreparation {
+            replace_scene: None,
+            world: &*context.world,
+            paths: &context.resources.paths,
+            assets: &mut *context.assets,
+            audio: &mut *context.audio,
+            registry: context.components,
+        },
+    )?;
+
+    apply_prepared_scene(
+        prepared,
+        None,
+        context.world,
+        context.render_cache,
+        context.audio_cache,
+        context.component_instances,
+    )
+}
+
+fn instantiate_runtime_scene(
+    path: &str,
+    context: &mut CommandApplyContext<'_>,
+) -> GameResult<seishin_world::SceneInstance> {
+    let scene = load_scene_config(path, &context.resources.paths)?;
+    let mut resolved_entities =
+        resolve_scene_document_entities(scene, &context.resources.paths, context.components)?;
+    let source_entities = assign_instance_source_ids(&mut resolved_entities)?;
+    let mut pending_entities = Vec::new();
+
+    for (resolved, source_entity) in resolved_entities.iter_mut().zip(source_entities.iter()) {
+        let mut record = resolved.record.clone();
+        let renderer = load_render_assets(&record, context.assets)?;
+        let audio = load_audio_asset(&record, context.assets, context.audio)?;
+        let mut components = Vec::new();
+
+        for component_ref in record.custom_components.clone() {
+            let component = context.components.instantiate(&component_ref)?;
+            if let Some(type_id) = context.components.type_id(&component_ref.type_name) {
+                set_custom_component_type_id_on_record(
+                    &mut record,
+                    &component_ref.type_name,
+                    type_id,
+                );
+            }
+            components.push(component);
+        }
+
+        resolved.record = record;
+        pending_entities.push(PendingInstancedSceneEntity {
+            source_entity: *source_entity,
+            renderer,
+            audio,
+            components,
+        });
+    }
+
+    let instance = context
+        .world
+        .instantiate_resolved(path.to_string(), resolved_entities)?;
+
+    for pending in pending_entities {
+        let entity = instance
+            .entity_for_source(pending.source_entity)
+            .ok_or_else(|| -> Box<dyn Error> {
+                format!(
+                    "scene instance from '{path}' did not produce entity for source {}",
+                    pending.source_entity.raw()
+                )
+                .into()
+            })?;
+
+        if let Some(renderer) = pending.renderer {
+            context.render_cache.insert(entity, renderer);
+        }
+        if let Some(audio) = pending.audio {
+            context.audio_cache.insert(entity, audio);
+        }
+        context.component_instances.extend(
+            pending
+                .components
+                .into_iter()
+                .map(|component| RuntimeComponent { entity, component }),
+        );
+    }
+
+    Ok(instance)
+}
+
+fn assign_instance_source_ids(
+    resolved_entities: &mut [ResolvedEntity],
+) -> Result<Vec<Entity>, seishin_world::WorldError> {
+    let mut used_sources = Vec::new();
+
+    for source_entity in resolved_entities.iter().filter_map(|resolved| resolved.id) {
+        if used_sources.contains(&source_entity) {
+            return Err(seishin_world::WorldError::DuplicateEntityId(source_entity));
+        }
+        used_sources.push(source_entity);
+    }
+
+    let mut source_entities = Vec::with_capacity(resolved_entities.len());
+    let mut next_synthetic = 1;
+
+    for resolved in resolved_entities {
+        let source_entity = match resolved.id {
+            Some(source_entity) => source_entity,
+            None => {
+                let source_entity =
+                    next_unused_instance_source(&used_sources, &mut next_synthetic)?;
+                used_sources.push(source_entity);
+                resolved.id = Some(source_entity);
+                source_entity
+            }
+        };
+        source_entities.push(source_entity);
+    }
+
+    Ok(source_entities)
+}
+
+fn next_unused_instance_source(
+    used_sources: &[Entity],
+    next_synthetic: &mut u64,
+) -> Result<Entity, seishin_world::WorldError> {
+    while *next_synthetic < u64::MAX {
+        let source_entity = EntityId::new(*next_synthetic);
+        *next_synthetic += 1;
+        if !used_sources.contains(&source_entity) {
+            return Ok(source_entity);
+        }
+    }
+
+    Err(seishin_world::WorldError::EntityIdOverflow(EntityId::new(
+        u64::MAX,
+    )))
 }
 
 fn remove_runtime_scene_entities(
@@ -5124,6 +5348,98 @@ mod tests {
     }
 
     #[test]
+    fn commands_load_scene_preserves_declared_entity_ids() {
+        let mut startup = startup_with_scene(
+            "runtime_load.scene.toml",
+            r#"
+            [[entities]]
+            id = 42
+            name = "RuntimeLoaded"
+            "#,
+        );
+        let mut commands = Commands::default();
+
+        commands.load_scene("res://scenes/runtime_load.scene.toml");
+        apply_commands_for_startup(&mut commands, &mut startup).expect("apply commands");
+
+        assert_eq!(
+            startup.world.entity_by_name("RuntimeLoaded"),
+            Some(EntityId::new(42))
+        );
+    }
+
+    #[test]
+    fn commands_instantiate_scene_allocates_linked_duplicate_ids() {
+        let mut startup = startup_with_scene(
+            "runtime_instance.scene.toml",
+            r#"
+            [[entities]]
+            id = 1
+            name = "RuntimeInstance"
+            "#,
+        );
+        let mut commands = Commands::default();
+
+        commands.instantiate_scene("res://scenes/runtime_instance.scene.toml");
+        apply_commands_for_startup(&mut commands, &mut startup).expect("apply commands");
+
+        let entity = startup
+            .world
+            .entity_by_name("RuntimeInstance")
+            .expect("instanced entity");
+
+        assert_ne!(entity, EntityId::new(1));
+        assert_eq!(
+            startup
+                .world
+                .entity(entity)
+                .and_then(|record| record.instance_source.as_ref())
+                .map(|source| (source.scene.as_str(), source.source_entity)),
+            Some(("res://scenes/runtime_instance.scene.toml", EntityId::new(1)))
+        );
+    }
+
+    #[test]
+    fn frame_context_save_world_preserves_entity_ids() {
+        let mut startup = startup_with_scene("frame_save.scene.toml", "");
+        startup
+            .world
+            .insert(EntityId::new(42), EntityRecord::named("FrameSaved"))
+            .expect("insert saved entity");
+
+        let input = InputState::default();
+        let input_actions = InputActions::default();
+        let mut app_resources = AppResources::default();
+        let resources = Resources::new(startup.paths.clone());
+        let mut dialogue = DialogueState::default();
+        let mut commands = Commands::default();
+        let frame = FrameContext {
+            input: &input,
+            input_actions: &input_actions,
+            audio: &mut startup.audio,
+            audio_cache: &startup.audio_cache,
+            world: &mut startup.world,
+            app_resources: &mut app_resources,
+            resources: &resources,
+            dialogue: &mut dialogue,
+            commands: &mut commands,
+            frame: 0,
+            delta_seconds: 0.0,
+        };
+
+        let export = frame
+            .save_world("user://saves/frame_save.scene.toml")
+            .expect("save world");
+        let saved = resources
+            .saved_scene("user://saves/frame_save.scene.toml")
+            .expect("load saved scene");
+
+        assert!(export.omissions().is_empty());
+        assert_eq!(saved.entities[0].id, Some(42));
+        assert_eq!(saved.entities[0].name.as_deref(), Some("FrameSaved"));
+    }
+
+    #[test]
     fn unknown_scene_component_reports_clear_error() {
         let mut startup = basic_2d_startup();
 
@@ -5246,6 +5562,24 @@ mod tests {
     fn write_scene(paths: &ProjectPaths, scene_name: &str, scene: &str) {
         let path = paths.resource_root.join("scenes").join(scene_name);
         std::fs::write(path, scene).expect("write scene");
+    }
+
+    fn apply_commands_for_startup(
+        commands: &mut Commands,
+        startup: &mut StartupContext,
+    ) -> GameResult<()> {
+        let resources = Resources::new(startup.paths.clone());
+
+        commands.apply(CommandApplyContext {
+            world: &mut startup.world,
+            resources: &resources,
+            assets: &mut startup.assets,
+            audio: &mut startup.audio,
+            render_cache: &mut startup.render_cache,
+            audio_cache: &mut startup.audio_cache,
+            components: &startup.components,
+            component_instances: &mut startup.component_instances,
+        })
     }
 
     fn write_asset(paths: &ProjectPaths, asset_name: &str, contents: &[u8]) {
