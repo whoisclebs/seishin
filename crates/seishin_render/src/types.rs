@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::sync::Arc;
 
 use seishin_core::Transform2D;
@@ -206,12 +207,65 @@ impl Sprite {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpriteBatch {
+    pub texture_id: TextureId,
+    pub start: usize,
+    pub len: usize,
+}
+
+impl SpriteBatch {
+    pub const fn new(texture_id: TextureId, start: usize, len: usize) -> Self {
+        Self {
+            texture_id,
+            start,
+            len,
+        }
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    pub fn range(self) -> Range<usize> {
+        self.start..self.start + self.len
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RenderState<'a> {
     pub clear_color: ClearColor,
     pub camera: Camera2D,
     pub textures: &'a [TextureData],
     pub sprites: &'a [Sprite],
+}
+
+impl RenderState<'_> {
+    pub fn sprite_batches(&self) -> Vec<SpriteBatch> {
+        let Some(first) = self.sprites.first() else {
+            return Vec::new();
+        };
+
+        let mut batches = Vec::new();
+        let mut texture_id = first.texture_id;
+        let mut start = 0;
+        let mut len = 1;
+
+        for (index, sprite) in self.sprites.iter().enumerate().skip(1) {
+            if sprite.texture_id == texture_id {
+                len += 1;
+                continue;
+            }
+
+            batches.push(SpriteBatch::new(texture_id, start, len));
+            texture_id = sprite.texture_id;
+            start = index;
+            len = 1;
+        }
+
+        batches.push(SpriteBatch::new(texture_id, start, len));
+        batches
+    }
 }
 
 #[cfg(test)]
@@ -261,6 +315,51 @@ mod tests {
                 id: TextureId::new(7),
                 reason: "expected 16 RGBA bytes, got 15".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn render_state_batches_consecutive_sprites_by_texture_without_reordering() {
+        let sprites = [
+            Sprite::new(
+                TextureId::new(1),
+                Transform2D::from_translation(0.0, 0.0),
+                16.0,
+                16.0,
+            ),
+            Sprite::new(
+                TextureId::new(1),
+                Transform2D::from_translation(1.0, 0.0),
+                16.0,
+                16.0,
+            ),
+            Sprite::new(
+                TextureId::new(2),
+                Transform2D::from_translation(2.0, 0.0),
+                16.0,
+                16.0,
+            ),
+            Sprite::new(
+                TextureId::new(1),
+                Transform2D::from_translation(3.0, 0.0),
+                16.0,
+                16.0,
+            ),
+        ];
+        let state = RenderState {
+            clear_color: ClearColor::BLACK,
+            camera: Camera2D::default(),
+            textures: &[],
+            sprites: &sprites,
+        };
+
+        assert_eq!(
+            state.sprite_batches(),
+            vec![
+                SpriteBatch::new(TextureId::new(1), 0, 2),
+                SpriteBatch::new(TextureId::new(2), 2, 1),
+                SpriteBatch::new(TextureId::new(1), 3, 1),
+            ]
         );
     }
 

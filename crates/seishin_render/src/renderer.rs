@@ -203,13 +203,13 @@ impl Renderer {
                 pass.set_vertex_buffer(0, sprite_vertex_buffer.slice(..));
             }
 
-            for (index, sprite) in frame.sprites.iter().enumerate() {
+            for batch in frame.sprite_batches() {
                 let texture = self
                     .textures
-                    .get(&sprite.texture_id)
-                    .ok_or(RenderError::MissingTexture(sprite.texture_id))?;
-                let vertex_start = (index * 6) as u32;
-                let vertex_end = vertex_start + 6;
+                    .get(&batch.texture_id)
+                    .ok_or(RenderError::MissingTexture(batch.texture_id))?;
+                let vertex_start = (batch.start * 6) as u32;
+                let vertex_end = ((batch.start + batch.len) * 6) as u32;
 
                 pass.set_bind_group(0, &texture.bind_group, &[]);
                 pass.draw(vertex_start..vertex_end, 0..1);
