@@ -26,8 +26,8 @@ use seishin_core::EngineConfig;
 use seishin_core::{Engine, EngineResult, EntityId, Game, Transform2D, UpdateContext};
 use seishin_input::{InputState, KeyCode};
 use seishin_render::{
-    Camera2D, ClearColor, RenderState, RenderTargetDescriptor, RenderTargetId, Sprite, SpriteTint,
-    TextureData, TextureId,
+    Camera2D, ClearColor, RenderSize, RenderState, RenderTargetDescriptor, RenderTargetId, Sprite,
+    SpriteTint, TextureData, TextureId,
 };
 #[cfg(test)]
 use seishin_render_graph::NodeLabel;
@@ -39,8 +39,8 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
     resolve_scene_entity, CustomComponentRef, EntityRecord, LoadedScene, PrefabDocument,
-    ResolvedEntity, SceneDocument, SceneDocumentExport, SceneEntityDocument, UiInteractionRef,
-    UiRef, World,
+    ResolvedEntity, SceneDocument, SceneDocumentExport, SceneEntityDocument, UiAnchor,
+    UiInteractionRef, UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -1153,6 +1153,10 @@ fn render_world(world: &World, render_cache: &RenderCache, render: &mut RenderCo
 }
 
 fn extract_ui_world(world: &World, render: &mut RenderContext) {
+    render.ui_elements.extend(sorted_ui_elements(world));
+}
+
+fn sorted_ui_elements(world: &World) -> Vec<UiElement> {
     let mut elements = world
         .entities()
         .filter_map(|(entity, record)| {
@@ -1164,7 +1168,14 @@ fn extract_ui_world(world: &World, render: &mut RenderContext) {
         .collect::<Vec<_>>();
 
     elements.sort_by_key(|element| (element.ui.layout.z_index, element.entity));
-    render.ui_elements.extend(elements);
+    elements
+}
+
+fn ui_hit_test_world(world: &World, x: f32, y: f32, viewport: RenderSize) -> Option<UiElement> {
+    sorted_ui_elements(world)
+        .into_iter()
+        .filter(|element| element.rect(viewport).contains(x, y))
+        .max_by_key(|element| (element.ui.layout.z_index, element.entity))
 }
 
 const FRAME_RENDER_NODE_RESET: &str = "reset";
@@ -1347,6 +1358,10 @@ impl FrameContext<'_> {
         self.ui_interaction(entity).is_some_and(|interaction| {
             interaction.enabled && self.input().just_released(interaction.action.as_str())
         })
+    }
+
+    pub fn ui_hit_test(&self, x: f32, y: f32, viewport: RenderSize) -> Option<Entity> {
+        ui_hit_test_world(self.world, x, y, viewport).map(|element| element.entity())
     }
 }
 
@@ -1572,6 +1587,58 @@ impl UiElement {
     pub fn ui(&self) -> &UiRef {
         &self.ui
     }
+
+    pub fn rect(&self, viewport: RenderSize) -> UiRect {
+        UiRect::from_layout(self.ui.layout, viewport)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UiRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl UiRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+
+    fn from_layout(layout: seishin_world::UiLayoutRef, viewport: RenderSize) -> Self {
+        let width = layout.width.max(0.0);
+        let height = layout.height.max(0.0);
+        let viewport_width = viewport.width as f32;
+        let viewport_height = viewport.height as f32;
+        let (anchor_x, anchor_y, pivot_x, pivot_y) = match layout.anchor {
+            UiAnchor::TopLeft => (0.0, 0.0, 0.0, 0.0),
+            UiAnchor::Top => (viewport_width * 0.5, 0.0, 0.5, 0.0),
+            UiAnchor::TopRight => (viewport_width, 0.0, 1.0, 0.0),
+            UiAnchor::Left => (0.0, viewport_height * 0.5, 0.0, 0.5),
+            UiAnchor::Center => (viewport_width * 0.5, viewport_height * 0.5, 0.5, 0.5),
+            UiAnchor::Right => (viewport_width, viewport_height * 0.5, 1.0, 0.5),
+            UiAnchor::BottomLeft => (0.0, viewport_height, 0.0, 1.0),
+            UiAnchor::Bottom => (viewport_width * 0.5, viewport_height, 0.5, 1.0),
+            UiAnchor::BottomRight => (viewport_width, viewport_height, 1.0, 1.0),
+        };
+
+        Self {
+            x: anchor_x + layout.offset_x - width * pivot_x,
+            y: anchor_y + layout.offset_y - height * pivot_y,
+            width,
+            height,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1653,6 +1720,13 @@ impl RenderContext {
 
     pub fn ui_elements(&self) -> &[UiElement] {
         &self.ui_elements
+    }
+
+    pub fn ui_hit_test(&self, x: f32, y: f32, viewport: RenderSize) -> Option<&UiElement> {
+        self.ui_elements
+            .iter()
+            .filter(|element| element.rect(viewport).contains(x, y))
+            .max_by_key(|element| (element.ui.layout.z_index, element.entity))
     }
 
     fn state(&self) -> RenderState<'_> {
@@ -2744,6 +2818,107 @@ mod tests {
         assert_eq!(
             render.state().target,
             seishin_render::RenderTargetId::new(4)
+        );
+    }
+
+    #[test]
+    fn ui_hit_testing_uses_layout_rects_and_topmost_z_index() {
+        let mut render = RenderContext::new(ClearColor::BLACK);
+        render.ui_element(UiElement {
+            entity: EntityId::new(1),
+            ui: UiRef::new(seishin_world::UiLayoutRef {
+                anchor: seishin_world::UiAnchor::Center,
+                width: 40.0,
+                height: 40.0,
+                z_index: 1,
+                ..Default::default()
+            }),
+        });
+        render.ui_element(UiElement {
+            entity: EntityId::new(2),
+            ui: UiRef::new(seishin_world::UiLayoutRef {
+                anchor: seishin_world::UiAnchor::Center,
+                width: 20.0,
+                height: 20.0,
+                z_index: 2,
+                ..Default::default()
+            }),
+        });
+
+        let viewport = RenderSize::new(100, 100);
+
+        assert_eq!(
+            render.ui_elements()[0].rect(viewport),
+            UiRect::new(30.0, 30.0, 40.0, 40.0)
+        );
+        assert_eq!(
+            render
+                .ui_hit_test(50.0, 50.0, viewport)
+                .map(UiElement::entity),
+            Some(EntityId::new(2))
+        );
+    }
+
+    #[test]
+    fn frame_context_routes_ui_hit_testing_from_world_layout() {
+        let mut world = World::default();
+        let back = EntityId::new(1);
+        let front = EntityId::new(2);
+        world
+            .insert(
+                back,
+                EntityRecord {
+                    ui: Some(UiRef::new(seishin_world::UiLayoutRef {
+                        anchor: seishin_world::UiAnchor::Center,
+                        width: 40.0,
+                        height: 40.0,
+                        z_index: 1,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("back ui");
+        world
+            .insert(
+                front,
+                EntityRecord {
+                    ui: Some(UiRef::new(seishin_world::UiLayoutRef {
+                        anchor: seishin_world::UiAnchor::Center,
+                        width: 20.0,
+                        height: 20.0,
+                        z_index: 3,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("front ui");
+        let resources = Resources::new(ProjectPaths::new(
+            PathBuf::from("/project/assets"),
+            PathBuf::from("/project/resources"),
+            PathBuf::from("/project/user"),
+        ));
+        let input_actions = InputActions::default();
+        let input = InputState::default();
+        let mut audio = default_audio_system();
+        let audio_cache = AudioCache::default();
+        let mut dialogue = DialogueState::default();
+        let frame = FrameContext {
+            input: &input,
+            input_actions: &input_actions,
+            audio: &mut audio,
+            audio_cache: &audio_cache,
+            world: &mut world,
+            resources: &resources,
+            dialogue: &mut dialogue,
+            frame: 1,
+            delta_seconds: 1.0,
+        };
+
+        assert_eq!(
+            frame.ui_hit_test(50.0, 50.0, RenderSize::new(100, 100)),
+            Some(front)
         );
     }
 

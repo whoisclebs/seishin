@@ -13,7 +13,8 @@ pub use app::{
     ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
     FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
     LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
-    SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, Vec2, WorldComponentExt,
+    SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, UiRect, Vec2,
+    WorldComponentExt,
 };
 pub use seishin_render_graph::{
     NodeLabel, RenderGraph, RenderGraphContext, RenderGraphError, RenderGraphPasses,
@@ -110,7 +111,7 @@ pub mod prelude {
         ComponentFactory, ComponentRegistry, DialogueData, DialogueState, Entity, EntityMut,
         FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions, InputQuery,
         LogLevel, RenderContext, ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder,
-        SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, Vec2, World,
+        SpriteBundle, SpriteRenderer, StartupContext, Texture, UiElement, UiRect, Vec2, World,
         WorldComponentExt, WorldError,
     };
     pub use seishin_assets::{AssetHandle, AssetLoader, AssetPath, AssetRoot};
