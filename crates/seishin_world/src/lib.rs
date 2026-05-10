@@ -29,7 +29,7 @@ pub use save::{
     scene_document_from_resolved_entities, SceneDocumentExport, SceneExportOmission,
 };
 pub use seishin_core::{EntityId, Transform2D};
-pub use world::{SceneInstance, World, WorldError};
+pub use world::{LoadedScene, SceneInstance, World, WorldError};
 
 #[cfg(test)]
 mod tests {

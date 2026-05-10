@@ -18,10 +18,10 @@ pub use app::{
 pub use seishin_render_graph::{NodeLabel, RenderGraph, RenderGraphError, RenderGraphRunner};
 pub use seishin_world::{
     AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
-    PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff,
-    SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport,
-    SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance,
-    SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
+    LoadedScene, PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange,
+    SceneDiff, SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder,
+    SceneDocumentExport, SceneEntityBuilder, SceneEntityDocument, SceneExportOmission,
+    SceneInstance, SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
     SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
     SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
     SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef,
@@ -136,14 +136,14 @@ pub mod prelude {
     };
     pub use seishin_world::{
         AudioRef, CustomComponentDocument, CustomComponentRef, EntityRecord, InstanceSource,
-        PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange, SceneDiff,
-        SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder, SceneDocumentExport,
-        SceneEntityBuilder, SceneEntityDocument, SceneExportOmission, SceneInstance,
-        SceneInstanceDocument, SceneReloadError, SceneReloadQueue, SceneReloadReport,
-        SceneReloadRequest, SceneReloadResult, SceneReloadUpdate, SceneSpriteDocument,
-        SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
-        SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef, TagsDocument, UiAnchor, UiImageRef,
-        UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
+        LoadedScene, PrefabDocument, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange,
+        SceneDiff, SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder,
+        SceneDocumentExport, SceneEntityBuilder, SceneEntityDocument, SceneExportOmission,
+        SceneInstance, SceneInstanceDocument, SceneReloadError, SceneReloadQueue,
+        SceneReloadReport, SceneReloadRequest, SceneReloadResult, SceneReloadUpdate,
+        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
+        SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef,
+        TagsDocument, UiAnchor, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     };
 }
 

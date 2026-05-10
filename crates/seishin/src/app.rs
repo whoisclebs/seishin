@@ -2830,6 +2830,51 @@ mod tests {
     }
 
     #[test]
+    fn frame_world_exposes_scene_lifecycle_operations() {
+        let resources = Resources::new(ProjectPaths::new(
+            PathBuf::from("/project/assets"),
+            PathBuf::from("/project/resources"),
+            PathBuf::from("/user/seishin"),
+        ));
+        let mut dialogue = DialogueState::default();
+        let mut world = World::default();
+        let input_actions = InputActions::default();
+        let input = InputState::default();
+        let mut audio = default_audio_system();
+        let audio_cache = AudioCache::default();
+        let mut frame = FrameContext {
+            input: &input,
+            input_actions: &input_actions,
+            audio: &mut audio,
+            audio_cache: &audio_cache,
+            world: &mut world,
+            resources: &resources,
+            dialogue: &mut dialogue,
+            frame: 1,
+            delta_seconds: 1.0,
+        };
+
+        let mut world = frame.world();
+        let loaded = world
+            .load_scene_resolved(
+                "res://scenes/runtime.scene.toml",
+                [ResolvedEntity {
+                    id: Some(EntityId::new(7)),
+                    prefab: None,
+                    record: EntityRecord::named("RuntimeEntity"),
+                }],
+            )
+            .expect("load runtime scene");
+
+        assert_eq!(world.name(EntityId::new(7)), Some("RuntimeEntity"));
+        assert_eq!(loaded.entities(), &[EntityId::new(7)]);
+
+        world.unload_scene(&loaded).expect("unload runtime scene");
+
+        assert_eq!(world.name(EntityId::new(7)), None);
+    }
+
+    #[test]
     fn frame_context_dispatches_ui_interaction_actions_from_world_data() {
         let resources = Resources::new(ProjectPaths::new(
             PathBuf::from("/project/assets"),

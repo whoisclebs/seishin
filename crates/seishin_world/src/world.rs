@@ -50,6 +50,30 @@ impl SceneInstance {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedScene {
+    source: String,
+    entities: Vec<EntityId>,
+}
+
+impl LoadedScene {
+    pub fn new(source: impl Into<String>, mut entities: Vec<EntityId>) -> Self {
+        entities.sort();
+        Self {
+            source: source.into(),
+            entities,
+        }
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub fn entities(&self) -> &[EntityId] {
+        &self.entities
+    }
+}
+
 impl Default for World {
     fn default() -> Self {
         Self {
@@ -92,6 +116,37 @@ impl World {
 
         *self = staged;
         Ok(loaded)
+    }
+
+    pub fn load_scene_resolved(
+        &mut self,
+        source: impl Into<String>,
+        entities: impl IntoIterator<Item = ResolvedEntity>,
+    ) -> Result<LoadedScene, WorldError> {
+        let loaded = self.load_resolved(entities)?;
+        Ok(LoadedScene::new(source, loaded))
+    }
+
+    pub fn replace_scene_resolved(
+        &mut self,
+        scene: &LoadedScene,
+        entities: impl IntoIterator<Item = ResolvedEntity>,
+    ) -> Result<LoadedScene, WorldError> {
+        let mut staged = self.clone();
+        staged.remove_scene_entities(scene)?;
+        let loaded = staged.load_resolved(entities)?;
+
+        *self = staged;
+        Ok(LoadedScene::new(scene.source.clone(), loaded))
+    }
+
+    pub fn unload_scene(&mut self, scene: &LoadedScene) -> Result<Vec<EntityId>, WorldError> {
+        let mut staged = self.clone();
+        staged.remove_scene_entities(scene)?;
+        let removed = scene.entities.clone();
+
+        *self = staged;
+        Ok(removed)
     }
 
     pub fn instantiate_resolved(
@@ -373,6 +428,20 @@ impl World {
         self.entities
             .get_mut(&entity)
             .ok_or(WorldError::MissingEntity(entity))
+    }
+
+    fn remove_scene_entities(&mut self, scene: &LoadedScene) -> Result<(), WorldError> {
+        for entity in &scene.entities {
+            if !self.entities.contains_key(entity) {
+                return Err(WorldError::MissingEntity(*entity));
+            }
+        }
+
+        for entity in &scene.entities {
+            self.entities.remove(entity);
+        }
+
+        Ok(())
     }
 
     fn instance_source_entities(entities: &[ResolvedEntity]) -> Result<Vec<EntityId>, WorldError> {
@@ -765,6 +834,58 @@ mod tests {
         assert_eq!(loaded, vec![EntityId::new(5), EntityId::new(6)]);
         assert_eq!(world.entity_by_name("SavedPlayer"), Some(EntityId::new(5)));
         assert_eq!(world.entity_by_name("GeneratedNpc"), Some(EntityId::new(6)));
+    }
+
+    #[test]
+    fn loaded_scene_handles_replace_and_unload_only_tracked_entities() {
+        let mut world = World::default();
+        let external = world.spawn(EntityRecord::named("External"));
+
+        let loaded = world
+            .load_scene_resolved(
+                "res://scenes/room.scene.toml",
+                [
+                    crate::resolve::ResolvedEntity {
+                        id: Some(EntityId::new(10)),
+                        prefab: None,
+                        record: EntityRecord::named("OldExplicit"),
+                    },
+                    crate::resolve::ResolvedEntity {
+                        id: None,
+                        prefab: None,
+                        record: EntityRecord::named("OldGenerated"),
+                    },
+                ],
+            )
+            .expect("load scene");
+
+        assert_eq!(loaded.source(), "res://scenes/room.scene.toml");
+        assert_eq!(loaded.entities(), &[EntityId::new(10), EntityId::new(11)]);
+        assert_eq!(world.entity_by_name("External"), Some(external));
+
+        let replaced = world
+            .replace_scene_resolved(
+                &loaded,
+                [crate::resolve::ResolvedEntity {
+                    id: Some(EntityId::new(20)),
+                    prefab: None,
+                    record: EntityRecord::named("NewExplicit"),
+                }],
+            )
+            .expect("replace scene");
+
+        assert_eq!(replaced.source(), loaded.source());
+        assert_eq!(replaced.entities(), &[EntityId::new(20)]);
+        assert_eq!(world.entity_by_name("OldExplicit"), None);
+        assert_eq!(world.entity_by_name("OldGenerated"), None);
+        assert_eq!(world.entity_by_name("NewExplicit"), Some(EntityId::new(20)));
+        assert_eq!(world.entity_by_name("External"), Some(external));
+
+        let removed = world.unload_scene(&replaced).expect("unload scene");
+
+        assert_eq!(removed, vec![EntityId::new(20)]);
+        assert_eq!(world.entity_by_name("NewExplicit"), None);
+        assert_eq!(world.entity_by_name("External"), Some(external));
     }
 
     #[test]
