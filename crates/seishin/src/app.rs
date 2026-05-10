@@ -41,9 +41,9 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 ))]
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
-    parse_tile_map, resolve_scene_entity, tile_map_to_scene_entities, AudioRef, CustomComponentRef,
-    EntityRecord, LoadedScene, PrefabDocument, ResolvedEntity, SceneDocument, SceneDocumentExport,
-    SceneEntityDocument, SpriteRef, UiAnchor, UiInteractionRef, UiRef, World,
+    parse_tile_map, resolve_scene_entity, tile_map_to_scene_entities, AudioRef, ColliderRef,
+    CustomComponentRef, EntityRecord, LoadedScene, PrefabDocument, ResolvedEntity, SceneDocument,
+    SceneDocumentExport, SceneEntityDocument, SpriteRef, UiAnchor, UiInteractionRef, UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -2209,6 +2209,10 @@ impl Query<'_> {
 
     pub fn sprite(&self, entity: Entity) -> Option<&SpriteRef> {
         self.world.sprite(entity)
+    }
+
+    pub fn collider(&self, entity: Entity) -> Option<&ColliderRef> {
+        self.world.collider(entity)
     }
 
     pub fn audio(&self, entity: Entity) -> Option<&AudioRef> {

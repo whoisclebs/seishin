@@ -134,6 +134,28 @@ impl TileMapQuery {
     }
 }
 
+pub fn entity_collision_aabb(
+    world: &World,
+    entity: Entity,
+    position: Vec2,
+    fallback_size: f32,
+) -> Aabb {
+    let (width, height) = world
+        .collider(entity)
+        .map(|collider| (collider.width, collider.height))
+        .or_else(|| {
+            world.sprite(entity).map(|sprite| {
+                (
+                    sprite.width.unwrap_or(fallback_size),
+                    sprite.height.unwrap_or(fallback_size),
+                )
+            })
+        })
+        .unwrap_or((fallback_size, fallback_size));
+
+    Aabb::from_center_size(position.x, position.y, width, height)
+}
+
 pub fn entity_sprite_aabb(
     world: &World,
     entity: Entity,
@@ -167,7 +189,7 @@ pub fn intersects_entities_with_tag(
         let Some(transform) = world.transform(entity) else {
             continue;
         };
-        let other_bounds = entity_sprite_aabb(
+        let other_bounds = entity_collision_aabb(
             world,
             entity,
             Vec2::new(transform.x, transform.y),
@@ -191,7 +213,7 @@ pub fn can_entity_occupy_tilemap(
     let fallback_size = map
         .map(TileMapQuery::tile_size)
         .unwrap_or(TileMapQuery::DEFAULT_TILE_SIZE);
-    let bounds = entity_sprite_aabb(world, entity, position, fallback_size);
+    let bounds = entity_collision_aabb(world, entity, position, fallback_size);
 
     if map.is_some_and(|map| !map.is_area_walkable(bounds)) {
         return false;
@@ -214,7 +236,7 @@ fn parse_i32(value: Option<&str>) -> Option<i32> {
 mod tests {
     use super::*;
     use seishin_core::{EntityId, Transform2D};
-    use seishin_world::{EntityRecord, SpriteRef};
+    use seishin_world::{ColliderRef, EntityRecord, SpriteRef};
 
     fn test_map() -> TileMapQuery {
         TileMapQuery {
@@ -381,6 +403,60 @@ mod tests {
             player,
             Vec2::new(96.0, 0.0),
             Some("solid_actor")
+        ));
+    }
+
+    #[test]
+    fn entity_occupancy_uses_collider_instead_of_visual_sprite_size() {
+        let map = TileMapQuery {
+            tile_size: 48.0,
+            width: 3,
+            height: 3,
+            blocked: vec![(0, 1), (2, 1)],
+            spawns: HashMap::new(),
+        };
+        let mut world = World::default();
+        let player = EntityId::new(1);
+
+        world
+            .insert(
+                player,
+                EntityRecord {
+                    sprite: Some(SpriteRef {
+                        texture: "asset://sprites/player.png".to_string(),
+                        width: Some(48.0),
+                        height: Some(48.0),
+                        source_x: None,
+                        source_y: None,
+                        source_width: None,
+                        source_height: None,
+                        layer: 0,
+                        sort_order: 0,
+                        tint: None,
+                    }),
+                    collider: Some(ColliderRef {
+                        width: 32.0,
+                        height: 32.0,
+                    }),
+                    transform: Transform2D::from_translation(48.0, 48.0),
+                    ..EntityRecord::default()
+                },
+            )
+            .expect("player");
+
+        assert!(can_entity_occupy_tilemap(
+            &world,
+            Some(&map),
+            player,
+            Vec2::new(56.0, 48.0),
+            None
+        ));
+        assert!(!can_entity_occupy_tilemap(
+            &world,
+            Some(&map),
+            player,
+            Vec2::new(57.0, 48.0),
+            None
         ));
     }
 }

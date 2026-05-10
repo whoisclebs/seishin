@@ -12,16 +12,16 @@ pub mod world;
 pub use builder::{SceneDocumentBuilder, SceneEntityBuilder};
 pub use diff::{SceneChange, SceneDiff, SceneDiffError, SceneDiffSide};
 pub use document::{
-    CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneDocument,
-    SceneEntityDocument, SceneInstanceDocument, SceneMapDocument, SceneSpriteDocument,
-    SceneTransformDocument, SceneUiDocument, SceneUiImageDocument, SceneUiInteractionDocument,
-    SceneUiLayoutDocument, SceneUiTextDocument, TagsDocument,
+    CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneColliderDocument,
+    SceneDocument, SceneEntityDocument, SceneInstanceDocument, SceneMapDocument,
+    SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
+    SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument, TagsDocument,
 };
 pub use procedural::{
     ProceduralRng, ProceduralSceneBuilder, ProceduralSeed, ProceduralTileMapBuilder,
 };
 pub use record::{
-    AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor,
+    AudioRef, ColliderRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiAnchor,
     UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
 };
 pub use reload::{
@@ -102,6 +102,10 @@ mod tests {
                         sort_order: 0,
                         tint: None,
                     }),
+                    collider: Some(ColliderRef {
+                        width: 32.0,
+                        height: 36.0,
+                    }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/step.wav".to_string(),
                     }),
@@ -139,6 +143,13 @@ mod tests {
                 .as_ref()
                 .and_then(|sprite| sprite.texture.as_deref()),
             Some("asset://sprites/player.png")
+        );
+        assert_eq!(
+            exported
+                .collider
+                .as_ref()
+                .and_then(|collider| collider.width),
+            Some(32.0)
         );
         assert_eq!(
             exported

@@ -11,6 +11,7 @@ pub struct EntityRecord {
     pub custom_components: Vec<CustomComponentRef>,
     pub transform: Transform2D,
     pub sprite: Option<SpriteRef>,
+    pub collider: Option<ColliderRef>,
     pub audio: Option<AudioRef>,
     pub ui: Option<UiRef>,
     pub instance_source: Option<InstanceSource>,
@@ -31,6 +32,11 @@ impl EntityRecord {
 
     pub fn with_sprite(mut self, sprite: SpriteRef) -> Self {
         self.sprite = Some(sprite);
+        self
+    }
+
+    pub fn with_collider(mut self, collider: ColliderRef) -> Self {
+        self.collider = Some(collider);
         self
     }
 
@@ -57,6 +63,12 @@ pub struct SpriteRef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioRef {
     pub sound: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColliderRef {
+    pub width: f32,
+    pub height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]

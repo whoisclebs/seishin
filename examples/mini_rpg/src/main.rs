@@ -24,10 +24,10 @@ mod tests {
         let map = parse_tile_map(OVERWORLD_MAP).expect("parse overworld map");
         let entities = tile_map_to_scene_entities(&map, 0);
 
-        assert_tile(&map, &entities, 0, "grass", 0, (0, 0));
-        assert_tile(&map, &entities, 1, "stone_wall", 32, (32, 48));
-        assert_tile(&map, &entities, 2, "water", 11, (16, 16));
-        assert_tile(&map, &entities, 3, "dirt_path", 31, (16, 48));
+        assert_tile(&map, &entities, 0, "grass", 0, (0, 0), false);
+        assert_tile(&map, &entities, 1, "stone_wall", 32, (32, 48), true);
+        assert_tile(&map, &entities, 2, "water", 11, (16, 16), true);
+        assert_tile(&map, &entities, 3, "dirt_path", 31, (16, 48), false);
     }
 
     fn assert_tile(
@@ -37,10 +37,12 @@ mod tests {
         kind: &str,
         atlas_index: u32,
         source: (u32, u32),
+        blocked: bool,
     ) {
         let definition = map.definition(code).expect("legend tile");
         assert_eq!(definition.name, kind);
         assert_eq!(definition.atlas_index, Some(atlas_index));
+        assert_eq!(definition.blocked, blocked);
 
         let sprite = entities
             .iter()

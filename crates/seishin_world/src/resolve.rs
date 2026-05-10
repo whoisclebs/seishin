@@ -2,13 +2,14 @@ use seishin_core::{EntityId, Transform2D};
 
 use crate::{
     document::{
-        CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneEntityDocument,
-        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
-        SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument,
+        CustomComponentDocument, PrefabDocument, SceneAudioDocument, SceneColliderDocument,
+        SceneEntityDocument, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
+        SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
+        SceneUiTextDocument,
     },
     record::{
-        AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiImageRef,
-        UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
+        AudioRef, ColliderRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef,
+        UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
     },
 };
 
@@ -40,12 +41,14 @@ impl std::error::Error for ResolveError {}
 struct EntityBlueprint {
     record: EntityRecord,
     sprite: Option<SceneSpriteDocument>,
+    collider: Option<SceneColliderDocument>,
     ui: Option<SceneUiDocument>,
 }
 
 impl EntityBlueprint {
     fn into_record(mut self) -> EntityRecord {
         self.record.sprite = finalize_sprite(self.sprite);
+        self.record.collider = finalize_collider(self.collider);
         self.record.ui = finalize_ui(self.ui);
         self.record
     }
@@ -87,6 +90,10 @@ pub fn resolve_scene_entity(
 
     if let Some(sprite) = entity.sprite {
         blueprint.sprite = merge_sprite(blueprint.sprite.take(), sprite);
+    }
+
+    if let Some(collider) = entity.collider {
+        blueprint.collider = merge_collider(blueprint.collider.take(), collider);
     }
 
     if let Some(audio) = entity.audio {
@@ -148,6 +155,12 @@ fn prefab_to_blueprint(prefab: PrefabDocument) -> Result<EntityBlueprint, Resolv
                     .try_into()
                     .map_err(|_| ResolveError::InvalidPrefabComponent(name.clone()))?;
                 blueprint.sprite = merge_sprite(blueprint.sprite.take(), sprite);
+            }
+            "collider" => {
+                let collider = value
+                    .try_into()
+                    .map_err(|_| ResolveError::InvalidPrefabComponent(name.clone()))?;
+                blueprint.collider = merge_collider(blueprint.collider.take(), collider);
             }
             "audio" => {
                 let audio = value
@@ -263,6 +276,28 @@ fn finalize_sprite(sprite: Option<SceneSpriteDocument>) -> Option<SpriteRef> {
         sort_order: sprite.sort_order.unwrap_or_default(),
         tint: sprite.tint,
     })
+}
+
+fn merge_collider(
+    base: Option<SceneColliderDocument>,
+    override_value: SceneColliderDocument,
+) -> Option<SceneColliderDocument> {
+    let width = override_value
+        .width
+        .or_else(|| base.as_ref().and_then(|collider| collider.width));
+    let height = override_value
+        .height
+        .or_else(|| base.as_ref().and_then(|collider| collider.height));
+
+    (width.is_some() || height.is_some()).then_some(SceneColliderDocument { width, height })
+}
+
+fn finalize_collider(collider: Option<SceneColliderDocument>) -> Option<ColliderRef> {
+    let collider = collider?;
+    let width = collider.width?;
+    let height = collider.height?;
+
+    (width > 0.0 && height > 0.0).then_some(ColliderRef { width, height })
 }
 
 fn merge_audio(base: Option<AudioRef>, override_value: SceneAudioDocument) -> Option<AudioRef> {
@@ -644,6 +679,10 @@ mod tests {
             texture = "asset://sprites/player.png"
             width = 96.0
             height = 96.0
+
+            [components.collider]
+            width = 32.0
+            height = 36.0
             "#,
         )
         .expect("parse prefab");
@@ -670,6 +709,13 @@ mod tests {
                 layer: 0,
                 sort_order: 0,
                 tint: None,
+            })
+        );
+        assert_eq!(
+            resolved.record.collider,
+            Some(ColliderRef {
+                width: 32.0,
+                height: 36.0,
             })
         );
     }

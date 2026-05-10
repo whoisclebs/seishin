@@ -37,7 +37,8 @@ pub use seishin_world::{
     WorldError,
 };
 pub use tilemap::{
-    can_entity_occupy_tilemap, entity_sprite_aabb, intersects_entities_with_tag, TileMapQuery,
+    can_entity_occupy_tilemap, entity_collision_aabb, entity_sprite_aabb,
+    intersects_entities_with_tag, TileMapQuery,
 };
 
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -115,15 +116,15 @@ pub mod world {
 
 pub mod prelude {
     pub use crate::{
-        can_entity_occupy_tilemap, component, component_factory, entity_sprite_aabb,
-        intersects_entities_with_tag, run, ActiveDialogue, App, Assets, Camera2DHandle,
-        CharacterData, CharacterDialogueData, Commands, Component, ComponentDefinition,
-        ComponentFactoryDefinition, ComponentRegistry, DialogueData, DialogueState, Entity,
-        EntityMut, FrameContext, FrameWorld, Game2D, GameResult, GameplayInput, InputActions,
-        InputQuery, LogLevel, Plugin, Query, RenderContext, ResourceToml, Resources, Schedule,
-        SchedulePhase, SpriteBuilder, SpriteBundle, SpriteRenderer, StartupContext, Texture,
-        TileMapQuery, UiDrawCommand, UiDrawKind, UiElement, UiRect, Vec2, World, WorldComponentExt,
-        WorldError,
+        can_entity_occupy_tilemap, component, component_factory, entity_collision_aabb,
+        entity_sprite_aabb, intersects_entities_with_tag, run, ActiveDialogue, App, Assets,
+        Camera2DHandle, CharacterData, CharacterDialogueData, Commands, Component,
+        ComponentDefinition, ComponentFactoryDefinition, ComponentRegistry, DialogueData,
+        DialogueState, Entity, EntityMut, FrameContext, FrameWorld, Game2D, GameResult,
+        GameplayInput, InputActions, InputQuery, LogLevel, Plugin, Query, RenderContext,
+        ResourceToml, Resources, Schedule, SchedulePhase, SpriteBuilder, SpriteBundle,
+        SpriteRenderer, StartupContext, Texture, TileMapQuery, UiDrawCommand, UiDrawKind,
+        UiElement, UiRect, Vec2, World, WorldComponentExt, WorldError,
     };
     pub use seishin_assets::{AssetBundle, AssetHandle, AssetLoader, AssetPath, AssetRoot};
     pub use seishin_audio::{
@@ -165,18 +166,19 @@ pub mod prelude {
         MobileTouchEvent, MobileTouchPhase,
     };
     pub use seishin_world::{
-        parse_tile_map, tile_map_to_scene_entities, AudioRef, CustomComponentDocument,
+        parse_tile_map, tile_map_to_scene_entities, AudioRef, ColliderRef, CustomComponentDocument,
         CustomComponentRef, EntityRecord, InstanceSource, LoadedScene, ParsedTileMap,
         PrefabDocument, ProceduralRng, ProceduralSceneBuilder, ProceduralSeed,
         ProceduralTileMapBuilder, ResolveError, ResolvedEntity, SceneAudioDocument, SceneChange,
-        SceneDiff, SceneDiffError, SceneDiffSide, SceneDocument, SceneDocumentBuilder,
-        SceneDocumentExport, SceneEntityBuilder, SceneEntityDocument, SceneExportOmission,
-        SceneInstance, SceneInstanceDocument, SceneReloadError, SceneReloadQueue,
-        SceneReloadReport, SceneReloadRequest, SceneReloadResult, SceneReloadUpdate,
-        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument, SceneUiImageDocument,
-        SceneUiInteractionDocument, SceneUiLayoutDocument, SceneUiTextDocument, SpriteRef,
-        TagsDocument, TileCell, TileDefinition, TileMapError, TileSetDefinition, UiAnchor,
-        UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef, UiRef, UiTextRef,
+        SceneColliderDocument, SceneDiff, SceneDiffError, SceneDiffSide, SceneDocument,
+        SceneDocumentBuilder, SceneDocumentExport, SceneEntityBuilder, SceneEntityDocument,
+        SceneExportOmission, SceneInstance, SceneInstanceDocument, SceneReloadError,
+        SceneReloadQueue, SceneReloadReport, SceneReloadRequest, SceneReloadResult,
+        SceneReloadUpdate, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
+        SceneUiImageDocument, SceneUiInteractionDocument, SceneUiLayoutDocument,
+        SceneUiTextDocument, SpriteRef, TagsDocument, TileCell, TileDefinition, TileMapError,
+        TileSetDefinition, UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiLayoutRef,
+        UiRef, UiTextRef,
     };
 }
 

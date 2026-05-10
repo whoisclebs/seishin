@@ -4,11 +4,11 @@ use seishin_core::{EntityId, Transform2D};
 
 use crate::{
     document::{
-        CustomComponentDocument, SceneAudioDocument, SceneDocument, SceneEntityDocument,
-        SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
+        CustomComponentDocument, SceneAudioDocument, SceneColliderDocument, SceneDocument,
+        SceneEntityDocument, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
     },
     procedural::{ProceduralSceneBuilder, ProceduralSeed},
-    record::{AudioRef, SpriteRef, UiRef},
+    record::{AudioRef, ColliderRef, SpriteRef, UiRef},
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -106,6 +106,11 @@ impl SceneEntityBuilder {
             sort_order: (sprite.sort_order != 0).then_some(sprite.sort_order),
             tint: sprite.tint,
         });
+        self
+    }
+
+    pub fn collider(mut self, collider: ColliderRef) -> Self {
+        self.entity.collider = Some(SceneColliderDocument::from(collider));
         self
     }
 

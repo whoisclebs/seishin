@@ -6,7 +6,9 @@ use std::{
 use seishin_core::{EntityId, Transform2D};
 
 use crate::{
-    record::{AudioRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiRef},
+    record::{
+        AudioRef, ColliderRef, CustomComponentRef, EntityRecord, InstanceSource, SpriteRef, UiRef,
+    },
     resolve::ResolvedEntity,
 };
 
@@ -284,6 +286,12 @@ impl World {
             .and_then(|record| record.sprite.as_ref())
     }
 
+    pub fn collider(&self, entity: EntityId) -> Option<&ColliderRef> {
+        self.entities
+            .get(&entity)
+            .and_then(|record| record.collider.as_ref())
+    }
+
     pub fn entities_with_sprite_texture(&self, texture: &str) -> Vec<EntityId> {
         self.entities_matching(|record| {
             record
@@ -391,6 +399,15 @@ impl World {
 
     pub fn set_sprite(&mut self, entity: EntityId, sprite: SpriteRef) -> Result<(), WorldError> {
         self.require_entity_mut(entity)?.sprite = Some(sprite);
+        Ok(())
+    }
+
+    pub fn set_collider(
+        &mut self,
+        entity: EntityId,
+        collider: ColliderRef,
+    ) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?.collider = Some(collider);
         Ok(())
     }
 

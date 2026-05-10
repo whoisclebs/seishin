@@ -4,9 +4,9 @@ use seishin_core::EntityId;
 
 use crate::{
     document::{
-        CustomComponentDocument, SceneAudioDocument, SceneDocument, SceneEntityDocument,
-        SceneInstanceDocument, SceneSpriteDocument, SceneTransformDocument, SceneUiDocument,
-        TagsDocument,
+        CustomComponentDocument, SceneAudioDocument, SceneColliderDocument, SceneDocument,
+        SceneEntityDocument, SceneInstanceDocument, SceneSpriteDocument, SceneTransformDocument,
+        SceneUiDocument, TagsDocument,
     },
     record::{CustomComponentRef, EntityRecord},
     resolve::ResolvedEntity,
@@ -155,6 +155,7 @@ fn scene_entity_document_from_record(
             sort_order: (sprite.sort_order != 0).then_some(sprite.sort_order),
             tint: sprite.tint.clone(),
         }),
+        collider: record.collider.map(SceneColliderDocument::from),
         audio: record.audio.as_ref().map(|audio| SceneAudioDocument {
             sound: Some(audio.sound.clone()),
         }),

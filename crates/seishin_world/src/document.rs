@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::record::{UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiRef, UiTextRef};
+use crate::record::{
+    ColliderRef, UiAnchor, UiFlexDirection, UiImageRef, UiInteractionRef, UiRef, UiTextRef,
+};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct SceneDocument {
@@ -75,6 +77,8 @@ pub struct SceneEntityDocument {
     pub data: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sprite: Option<SceneSpriteDocument>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collider: Option<SceneColliderDocument>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<SceneAudioDocument>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -150,6 +154,23 @@ pub struct SceneSpriteDocument {
     pub sort_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+pub struct SceneColliderDocument {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+}
+
+impl From<ColliderRef> for SceneColliderDocument {
+    fn from(collider: ColliderRef) -> Self {
+        Self {
+            width: Some(collider.width),
+            height: Some(collider.height),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
