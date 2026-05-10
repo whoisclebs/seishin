@@ -7,7 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-image = { version = "0.24.9", default-features = false, features = ["png"], optional = true }
+image = { version = "0.25.10", default-features = false, features = ["png"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures-util = { workspace = true, optional = true }
