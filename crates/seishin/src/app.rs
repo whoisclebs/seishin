@@ -35,7 +35,7 @@ use seishin_render_graph::{RenderGraph, RenderGraphError};
 use seishin_runtime::{run_desktop, DesktopGame, DesktopRunConfig, FixedTimestep, WindowConfig};
 use seishin_world::{
     resolve_scene_entity, CustomComponentRef, EntityRecord, PrefabDocument, ResolvedEntity,
-    SceneDocument, SceneEntityDocument, UiInteractionRef, UiRef, World,
+    SceneDocument, SceneDocumentExport, SceneEntityDocument, UiInteractionRef, UiRef, World,
 };
 use serde::Deserialize;
 #[cfg(feature = "logging")]
@@ -118,6 +118,41 @@ impl Resources {
         Ok(ResourceToml {
             value: self.load(path)?,
         })
+    }
+
+    pub fn saved_scene(&self, path: impl AsRef<str>) -> GameResult<SceneDocument> {
+        let path = path.as_ref();
+        let resolved = self.paths.resolve_user(path)?;
+        let source = platform::read_to_string(&resolved).map_err(|error| {
+            PathDiagnosticError::user(
+                path.to_string(),
+                resolved.clone(),
+                &self.paths.user_root,
+                error,
+            )
+        })?;
+
+        SceneDocument::from_toml_str(&source).map_err(|error| {
+            PathDiagnosticError::user(path.to_string(), resolved, &self.paths.user_root, error)
+                .into()
+        })
+    }
+
+    pub fn save_world(
+        &self,
+        path: impl AsRef<str>,
+        world: &World,
+    ) -> GameResult<SceneDocumentExport> {
+        let path = path.as_ref();
+        let resolved = self.paths.resolve_user(path)?;
+        let export = world.to_scene_document_export();
+        let source = export.document().to_toml_string()?;
+
+        platform::write_string(&resolved, &source).map_err(|error| {
+            PathDiagnosticError::user(path.to_string(), resolved, &self.paths.user_root, error)
+        })?;
+
+        Ok(export)
     }
 
     pub fn load<T>(&self, path: impl AsRef<str>) -> GameResult<T>
@@ -1745,6 +1780,7 @@ struct PathDiagnosticError {
 enum PathDiagnosticKind {
     Asset,
     Resource,
+    User,
 }
 
 impl PathDiagnosticError {
@@ -1777,6 +1813,21 @@ impl PathDiagnosticError {
             source: Box::new(source),
         }
     }
+
+    fn user(
+        requested: String,
+        resolved: PathBuf,
+        root: &Path,
+        source: impl Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            kind: PathDiagnosticKind::User,
+            requested,
+            resolved,
+            root: root.to_path_buf(),
+            source: Box::new(source),
+        }
+    }
 }
 
 impl std::fmt::Display for PathDiagnosticError {
@@ -1793,6 +1844,12 @@ impl std::fmt::Display for PathDiagnosticError {
                 "Configured resource root",
                 "Use res:// for resources/configuration/scene files.",
                 "Use asset:// for images, audio, video, and fonts.",
+            ),
+            PathDiagnosticKind::User => (
+                "User data",
+                "Configured user data root",
+                "Use user:// for saves/settings and writable user data.",
+                "Use res:// for read-only resources/configuration/scene files.",
             ),
         };
 
@@ -1848,7 +1905,6 @@ impl ProjectPaths {
         Ok(self.asset_root.join(asset_path.as_path()))
     }
 
-    #[cfg(test)]
     fn resolve_user(&self, requested: &str) -> GameResult<PathBuf> {
         let virtual_path = VirtualPath::parse(requested)?;
 
@@ -3275,6 +3331,52 @@ mod tests {
             .expect("player controller config");
 
         assert_eq!(config.f32("speed"), Some(180.0));
+    }
+
+    #[test]
+    fn resources_save_and_load_world_state_under_user_root() {
+        let root = unique_test_project_root("save-world");
+        let user_root = root.join("user");
+        let resources = Resources::new(ProjectPaths::new(
+            root.join("assets"),
+            root.join("resources"),
+            user_root.clone(),
+        ));
+        let mut world = World::default();
+
+        world
+            .insert(EntityId::new(42), EntityRecord::named("SavedPlayer"))
+            .expect("insert saved entity");
+
+        let export = resources
+            .save_world("user://saves/save_001.scene.toml", &world)
+            .expect("save world");
+        let saved = resources
+            .saved_scene("user://saves/save_001.scene.toml")
+            .expect("load saved scene");
+        let resolved = saved
+            .entities
+            .iter()
+            .cloned()
+            .map(|entity| resolve_scene_entity(entity, None).expect("resolve saved entity"))
+            .collect::<Vec<_>>();
+        let mut loaded_world = World::default();
+
+        assert!(export.omissions().is_empty());
+        assert_eq!(saved.entities[0].id, Some(42));
+        assert_eq!(saved.entities[0].name.as_deref(), Some("SavedPlayer"));
+        assert!(user_root
+            .join("saves")
+            .join("save_001.scene.toml")
+            .is_file());
+
+        loaded_world
+            .load_resolved(resolved)
+            .expect("load saved world");
+        assert_eq!(
+            loaded_world.entity_by_name("SavedPlayer"),
+            Some(EntityId::new(42))
+        );
     }
 
     #[test]

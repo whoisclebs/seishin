@@ -55,6 +55,23 @@ pub fn read_to_string(path: &Path) -> std::io::Result<String> {
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_string(path: &Path, contents: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::write(path, contents)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn write_string(_path: &Path, _contents: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "writing user data is not available on wasm yet",
+    ))
+}
+
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub async fn preload_web_resources(paths: &[String]) -> Result<(), wasm_bindgen::JsValue> {
     let mut resources = Vec::with_capacity(paths.len());
