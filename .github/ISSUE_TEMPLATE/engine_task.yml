@@ -1,0 +1,86 @@
+name: Engine Task
+description: Track a focused implementation task for the engine.
+title: "task: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for small, implementation-ready engine tasks. Keep the scope narrow enough to land directly on main with a conventional commit.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should change?
+      placeholder: Add a focused description of the engine capability or improvement.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - data-driven core / ECS
+        - scenes / hot reload
+        - renderer 2D
+        - render graph
+        - UI
+        - audio
+        - cross-platform runtime
+        - procedural generation
+        - dependencies / compile times
+        - CI/CD / release
+        - examples / validation
+    validations:
+      required: true
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current State
+      description: What exists today, and what limitation blocks this task?
+    validations:
+      required: true
+  - type: textarea
+    id: desired_outcome
+    attributes:
+      label: Desired Outcome
+      description: What behavior, API, or workflow should exist when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: implementation_scope
+    attributes:
+      label: Implementation Scope
+      description: List the concrete code areas that should be touched.
+      placeholder: |
+        - crates/...
+        - examples/...
+        - tests...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Use checkboxes for verifiable outcomes.
+      placeholder: |
+        - [ ] Public API is documented through examples or tests.
+        - [ ] Existing examples still compile.
+        - [ ] New behavior has focused tests.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: What should stay out of this task?
+  - type: checkboxes
+    id: validation
+    attributes:
+      label: Validation
+      options:
+        - label: `cargo fmt --all -- --check`
+        - label: `cargo clippy --workspace --all-targets -- -D warnings`
+        - label: `cargo test --workspace --all-targets`
+        - label: `cargo build --workspace`
+        - label: `cargo build --target wasm32-unknown-unknown -p seishin_basic_2d`, if relevant
