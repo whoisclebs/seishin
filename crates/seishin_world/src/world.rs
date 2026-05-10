@@ -167,6 +167,10 @@ impl World {
             .min()
     }
 
+    pub fn entities_named(&self, name: &str) -> Vec<EntityId> {
+        self.entities_matching(|record| record.name.as_deref() == Some(name))
+    }
+
     pub fn entities_with_tag(&self, tag: &str) -> Vec<EntityId> {
         let mut entities = self
             .entities
@@ -210,10 +214,28 @@ impl World {
             .map(String::as_str)
     }
 
+    pub fn entities_with_data_ref(&self, key: &str, value: &str) -> Vec<EntityId> {
+        self.entities_matching(|record| {
+            record
+                .data_refs
+                .get(key)
+                .is_some_and(|current| current == value)
+        })
+    }
+
     pub fn sprite(&self, entity: EntityId) -> Option<&SpriteRef> {
         self.entities
             .get(&entity)
             .and_then(|record| record.sprite.as_ref())
+    }
+
+    pub fn entities_with_sprite_texture(&self, texture: &str) -> Vec<EntityId> {
+        self.entities_matching(|record| {
+            record
+                .sprite
+                .as_ref()
+                .is_some_and(|sprite| sprite.texture == texture)
+        })
     }
 
     pub fn audio(&self, entity: EntityId) -> Option<&AudioRef> {
@@ -289,24 +311,68 @@ impl World {
         delta_x: f32,
         delta_y: f32,
     ) -> Result<(), WorldError> {
-        let record = self
-            .entities
-            .get_mut(&entity)
-            .ok_or(WorldError::MissingEntity(entity))?;
+        let record = self.require_entity_mut(entity)?;
 
         record.transform = record.transform.translated(delta_x, delta_y);
         Ok(())
     }
 
     pub fn set_position(&mut self, entity: EntityId, x: f32, y: f32) -> Result<(), WorldError> {
-        let record = self
-            .entities
-            .get_mut(&entity)
-            .ok_or(WorldError::MissingEntity(entity))?;
+        let record = self.require_entity_mut(entity)?;
 
         record.transform.x = x;
         record.transform.y = y;
         Ok(())
+    }
+
+    pub fn set_transform(
+        &mut self,
+        entity: EntityId,
+        transform: Transform2D,
+    ) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?.transform = transform;
+        Ok(())
+    }
+
+    pub fn set_sprite(&mut self, entity: EntityId, sprite: SpriteRef) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?.sprite = Some(sprite);
+        Ok(())
+    }
+
+    pub fn set_audio(&mut self, entity: EntityId, audio: AudioRef) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?.audio = Some(audio);
+        Ok(())
+    }
+
+    pub fn set_ui(&mut self, entity: EntityId, ui: UiRef) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?.ui = Some(ui);
+        Ok(())
+    }
+
+    pub fn set_data_ref(
+        &mut self,
+        entity: EntityId,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), WorldError> {
+        self.require_entity_mut(entity)?
+            .data_refs
+            .insert(key.into(), value.into());
+        Ok(())
+    }
+
+    pub fn remove_data_ref(
+        &mut self,
+        entity: EntityId,
+        key: &str,
+    ) -> Result<Option<String>, WorldError> {
+        Ok(self.require_entity_mut(entity)?.data_refs.remove(key))
+    }
+
+    fn require_entity_mut(&mut self, entity: EntityId) -> Result<&mut EntityRecord, WorldError> {
+        self.entities
+            .get_mut(&entity)
+            .ok_or(WorldError::MissingEntity(entity))
     }
 
     fn instance_source_entities(entities: &[ResolvedEntity]) -> Result<Vec<EntityId>, WorldError> {
@@ -527,6 +593,90 @@ mod tests {
 
         assert_eq!(world.entity_by_name("Duplicate"), Some(low));
         assert_eq!(world.entities_with_tag("npc"), vec![low, high]);
+    }
+
+    #[test]
+    fn world_queries_and_mutates_common_record_fields() {
+        let mut world = World::default();
+        let high = EntityId::new(9);
+        let low = EntityId::new(2);
+
+        world
+            .insert(
+                high,
+                EntityRecord::named("Duplicate").with_sprite(SpriteRef {
+                    texture: "asset://sprites/high.png".to_string(),
+                    width: None,
+                    height: None,
+                    layer: 0,
+                    sort_order: 0,
+                }),
+            )
+            .expect("insert high");
+        world
+            .insert(low, EntityRecord::named("Duplicate"))
+            .expect("insert low");
+
+        world
+            .set_data_ref(low, "role", "merchant")
+            .expect("set data ref");
+        world
+            .set_transform(high, Transform2D::from_translation(12.0, 34.0))
+            .expect("set transform");
+        world
+            .set_audio(
+                low,
+                AudioRef {
+                    sound: "asset://audio/beep.wav".to_string(),
+                },
+            )
+            .expect("set audio");
+        world
+            .set_ui(low, UiRef::text("Talk", crate::record::UiAnchor::Bottom))
+            .expect("set ui");
+        world
+            .set_sprite(
+                low,
+                SpriteRef {
+                    texture: "asset://sprites/low.png".to_string(),
+                    width: Some(16.0),
+                    height: Some(16.0),
+                    layer: 1,
+                    sort_order: 2,
+                },
+            )
+            .expect("set sprite");
+
+        assert_eq!(world.entities_named("Duplicate"), vec![low, high]);
+        assert_eq!(world.entities_with_data_ref("role", "merchant"), vec![low]);
+        assert_eq!(
+            world.entities_with_sprite_texture("asset://sprites/high.png"),
+            vec![high]
+        );
+        assert_eq!(
+            world.entities_with_sprite_texture("asset://sprites/low.png"),
+            vec![low]
+        );
+        assert_eq!(
+            world.transform(high),
+            Some(Transform2D::from_translation(12.0, 34.0))
+        );
+        assert_eq!(
+            world.audio(low).map(|audio| audio.sound.as_str()),
+            Some("asset://audio/beep.wav")
+        );
+        assert_eq!(
+            world
+                .ui(low)
+                .and_then(|ui| ui.text.as_ref())
+                .map(|text| text.value.as_str()),
+            Some("Talk")
+        );
+
+        assert_eq!(
+            world.set_data_ref(EntityId::new(404), "missing", "value"),
+            Err(WorldError::MissingEntity(EntityId::new(404)))
+        );
     }
 
     #[test]
