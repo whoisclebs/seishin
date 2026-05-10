@@ -216,6 +216,7 @@ pub struct Sprite {
     pub width: f32,
     pub height: f32,
     pub material: SpriteMaterial,
+    pub region: SpriteRegion,
 }
 
 impl Sprite {
@@ -226,6 +227,7 @@ impl Sprite {
             width,
             height,
             material: SpriteMaterial::default(),
+            region: SpriteRegion::FULL,
         }
     }
 
@@ -236,6 +238,11 @@ impl Sprite {
 
     pub fn with_tint(self, tint: SpriteTint) -> Self {
         self.with_material(SpriteMaterial { tint })
+    }
+
+    pub fn with_region(mut self, region: SpriteRegion) -> Self {
+        self.region = region;
+        self
     }
 
     #[cfg(feature = "wgpu-backend")]
@@ -261,6 +268,56 @@ impl Sprite {
                 self.transform.y + half_height,
             ),
         ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpriteRegion {
+    pub min_u: f32,
+    pub min_v: f32,
+    pub max_u: f32,
+    pub max_v: f32,
+}
+
+impl SpriteRegion {
+    pub const FULL: Self = Self::new(0.0, 0.0, 1.0, 1.0);
+
+    pub const fn new(min_u: f32, min_v: f32, max_u: f32, max_v: f32) -> Self {
+        Self {
+            min_u,
+            min_v,
+            max_u,
+            max_v,
+        }
+    }
+
+    pub fn from_pixels(
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        texture_width: u32,
+        texture_height: u32,
+    ) -> Self {
+        if texture_width == 0 || texture_height == 0 {
+            return Self::FULL;
+        }
+
+        let texture_width = texture_width as f32;
+        let texture_height = texture_height as f32;
+
+        Self {
+            min_u: x as f32 / texture_width,
+            min_v: y as f32 / texture_height,
+            max_u: x.saturating_add(width) as f32 / texture_width,
+            max_v: y.saturating_add(height) as f32 / texture_height,
+        }
+    }
+}
+
+impl Default for SpriteRegion {
+    fn default() -> Self {
+        Self::FULL
     }
 }
 
@@ -494,6 +551,14 @@ mod tests {
         let tinted = sprite.with_tint(SpriteTint::rgba(0.25, 0.5, 0.75, 0.8));
 
         assert_eq!(tinted.material.tint, SpriteTint::rgba(0.25, 0.5, 0.75, 0.8));
+    }
+
+    #[test]
+    fn sprite_region_from_pixels_normalizes_texture_coordinates() {
+        assert_eq!(
+            SpriteRegion::from_pixels(16, 32, 16, 16, 64, 128),
+            SpriteRegion::new(0.25, 0.25, 0.5, 0.375)
+        );
     }
 
     #[test]

@@ -24,6 +24,7 @@ pub struct TileCell {
 pub struct TileDefinition {
     pub name: String,
     pub texture: Option<String>,
+    pub atlas_index: Option<u32>,
     pub blocked: bool,
     pub tint: Option<String>,
 }
@@ -31,9 +32,20 @@ pub struct TileDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedTileMap {
     pub tile_size: f32,
+    pub tileset: Option<TileSetDefinition>,
     pub legend: BTreeMap<u8, TileDefinition>,
     pub rows: Vec<Vec<TileCell>>,
     pub spawns: BTreeMap<String, (i32, i32)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TileSetDefinition {
+    pub atlas: String,
+    pub tile_width: u32,
+    pub tile_height: u32,
+    pub columns: u32,
+    pub margin: u32,
+    pub spacing: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +73,7 @@ impl Default for ParsedTileMap {
     fn default() -> Self {
         Self {
             tile_size: DEFAULT_TILE_SIZE,
+            tileset: None,
             legend: BTreeMap::new(),
             rows: Vec::new(),
             spawns: BTreeMap::new(),
@@ -106,6 +119,7 @@ pub fn parse_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
 #[derive(Debug, Deserialize)]
 struct TomlTileMap {
     tile_size: Option<f32>,
+    tileset: Option<TomlTileSetDefinition>,
     #[serde(default)]
     legend: BTreeMap<String, TomlTileDefinition>,
     tiles: TomlTileRows,
@@ -119,9 +133,23 @@ struct TomlTileRows {
 }
 
 #[derive(Debug, Deserialize)]
+struct TomlTileSetDefinition {
+    atlas: String,
+    tile_width: u32,
+    tile_height: u32,
+    columns: u32,
+    #[serde(default)]
+    margin: u32,
+    #[serde(default)]
+    spacing: u32,
+}
+
+#[derive(Debug, Deserialize)]
 struct TomlTileDefinition {
     name: Option<String>,
     texture: Option<String>,
+    atlas_index: Option<u32>,
+    collision: Option<String>,
     #[serde(default)]
     blocked: bool,
     tint: Option<String>,
@@ -145,6 +173,7 @@ fn parse_toml_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
         ));
     }
 
+    let tileset = document.tileset.map(parse_tileset).transpose()?;
     let mut legend = BTreeMap::new();
 
     for (code, definition) in document.legend {
@@ -160,13 +189,21 @@ fn parse_toml_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
                 "legend tile code {code} has an empty texture"
             )));
         }
+        if definition.atlas_index.is_some() && tileset.is_none() {
+            return Err(TileMapError::new(format!(
+                "legend tile code {code} uses atlas_index but the map has no [tileset]"
+            )));
+        }
+        let blocked = parse_tile_collision(code, definition.collision.as_deref())?
+            .unwrap_or(definition.blocked);
 
         legend.insert(
             code,
             TileDefinition {
                 name: definition.name.unwrap_or_else(|| code.to_string()),
                 texture: definition.texture,
-                blocked: definition.blocked,
+                atlas_index: definition.atlas_index,
+                blocked,
                 tint: definition.tint,
             },
         );
@@ -204,10 +241,47 @@ fn parse_toml_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
 
     Ok(ParsedTileMap {
         tile_size,
+        tileset,
         legend,
         rows,
         spawns,
     })
+}
+
+fn parse_tileset(tileset: TomlTileSetDefinition) -> Result<TileSetDefinition, TileMapError> {
+    if tileset.atlas.trim().is_empty() {
+        return Err(TileMapError::new("tileset atlas must not be empty"));
+    }
+    if tileset.tile_width == 0 || tileset.tile_height == 0 {
+        return Err(TileMapError::new(
+            "tileset tile_width and tile_height must be greater than zero",
+        ));
+    }
+    if tileset.columns == 0 {
+        return Err(TileMapError::new(
+            "tileset columns must be greater than zero",
+        ));
+    }
+
+    Ok(TileSetDefinition {
+        atlas: tileset.atlas,
+        tile_width: tileset.tile_width,
+        tile_height: tileset.tile_height,
+        columns: tileset.columns,
+        margin: tileset.margin,
+        spacing: tileset.spacing,
+    })
+}
+
+fn parse_tile_collision(code: u8, collision: Option<&str>) -> Result<Option<bool>, TileMapError> {
+    match collision {
+        None => Ok(None),
+        Some("none") => Ok(Some(false)),
+        Some("solid") => Ok(Some(true)),
+        Some(other) => Err(TileMapError::new(format!(
+            "legend tile code {code} has invalid collision '{other}'"
+        ))),
+    }
 }
 
 fn parse_legacy_tile_map(source: &str) -> Result<ParsedTileMap, TileMapError> {
@@ -323,6 +397,7 @@ fn generic_tile_definition(code: u8) -> TileDefinition {
     TileDefinition {
         name: format!("tile_{code}"),
         texture: None,
+        atlas_index: None,
         blocked: code != 0,
         tint: None,
     }
@@ -361,6 +436,11 @@ pub fn tile_map_to_scene_entities(
             let definition = map
                 .definition(tile.code)
                 .expect("tile parser validates all tile codes against the legend");
+            let atlas_source = map
+                .tileset
+                .as_ref()
+                .zip(definition.atlas_index)
+                .map(|(tileset, atlas_index)| tileset_source_rect(tileset, atlas_index));
             let mut tags = vec![TILE_TAG.to_string()];
             if definition.blocked {
                 tags.push(BLOCKED_TAG.to_string());
@@ -382,10 +462,16 @@ pub fn tile_map_to_scene_entities(
                 sprite: definition
                     .texture
                     .as_ref()
+                    .cloned()
+                    .or_else(|| map.tileset.as_ref().map(|tileset| tileset.atlas.clone()))
                     .map(|texture| SceneSpriteDocument {
-                        texture: Some(texture.clone()),
+                        texture: Some(texture),
                         width: Some(tile_size),
                         height: Some(tile_size),
+                        source_x: atlas_source.map(|source| source.x),
+                        source_y: atlas_source.map(|source| source.y),
+                        source_width: atlas_source.map(|source| source.width),
+                        source_height: atlas_source.map(|source| source.height),
                         tint: definition.tint.clone(),
                         ..SceneSpriteDocument::default()
                     }),
@@ -418,6 +504,28 @@ pub fn tile_map_to_scene_entities(
     }
 
     entities
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TileSourceRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+fn tileset_source_rect(tileset: &TileSetDefinition, atlas_index: u32) -> TileSourceRect {
+    let column = atlas_index % tileset.columns;
+    let row = atlas_index / tileset.columns;
+    let stride_x = tileset.tile_width + tileset.spacing;
+    let stride_y = tileset.tile_height + tileset.spacing;
+
+    TileSourceRect {
+        x: tileset.margin + column * stride_x,
+        y: tileset.margin + row * stride_y,
+        width: tileset.tile_width,
+        height: tileset.tile_height,
+    }
 }
 
 pub const fn blocked_tag() -> &'static str {
@@ -515,15 +623,61 @@ mod tests {
     }
 
     #[test]
+    fn parse_tile_map_reads_tileset_atlas_and_regions() {
+        let source = r#"
+            tile_size = 48.0
+
+            [tileset]
+            atlas = "asset://sprites/open_tileset.png"
+            tile_width = 16
+            tile_height = 16
+            columns = 10
+
+            [legend.0]
+            name = "open"
+            atlas_index = 2
+            collision = "none"
+
+            [legend.1]
+            name = "solid"
+            atlas_index = 13
+            collision = "solid"
+
+            [tiles]
+            rows = [
+              [0, 1],
+              [1, 0],
+            ]
+            "#;
+
+        let map = parse_tile_map(source).expect("parse atlas map");
+        let tileset = map.tileset.as_ref().expect("tileset metadata");
+
+        assert_eq!(tileset.atlas, "asset://sprites/open_tileset.png");
+        assert_eq!(tileset.tile_width, 16);
+        assert_eq!(tileset.tile_height, 16);
+        assert_eq!(tileset.columns, 10);
+        assert_eq!(map.definition(0).and_then(|tile| tile.atlas_index), Some(2));
+        assert_eq!(
+            map.definition(1).and_then(|tile| tile.atlas_index),
+            Some(13)
+        );
+        assert_eq!(map.definition(0).map(|tile| tile.blocked), Some(false));
+        assert_eq!(map.definition(1).map(|tile| tile.blocked), Some(true));
+    }
+
+    #[test]
     fn tile_map_to_scene_entities_emits_tiles_and_spawnpoints() {
         let map = ParsedTileMap {
             tile_size: 64.0,
+            tileset: None,
             legend: BTreeMap::from([
                 (
                     0,
                     TileDefinition {
                         name: "open".to_string(),
                         texture: Some("asset://game/open.png".to_string()),
+                        atlas_index: None,
                         blocked: false,
                         tint: None,
                     },
@@ -533,6 +687,7 @@ mod tests {
                     TileDefinition {
                         name: "blocked".to_string(),
                         texture: Some("asset://game/blocked.png".to_string()),
+                        atlas_index: None,
                         blocked: true,
                         tint: None,
                     },
@@ -569,5 +724,63 @@ mod tests {
                 .and_then(|sprite| sprite.texture.as_deref()),
             Some("asset://game/blocked.png")
         );
+    }
+
+    #[test]
+    fn atlas_tile_map_to_scene_entities_reuses_atlas_texture_with_source_rects() {
+        let map = ParsedTileMap {
+            tile_size: 48.0,
+            tileset: Some(TileSetDefinition {
+                atlas: "asset://sprites/open_tileset.png".to_string(),
+                tile_width: 16,
+                tile_height: 16,
+                columns: 10,
+                margin: 1,
+                spacing: 2,
+            }),
+            legend: BTreeMap::from([
+                (
+                    0,
+                    TileDefinition {
+                        name: "open".to_string(),
+                        texture: None,
+                        atlas_index: Some(0),
+                        blocked: false,
+                        tint: None,
+                    },
+                ),
+                (
+                    1,
+                    TileDefinition {
+                        name: "solid".to_string(),
+                        texture: None,
+                        atlas_index: Some(12),
+                        blocked: true,
+                        tint: None,
+                    },
+                ),
+            ]),
+            rows: vec![vec![TileCell { code: 0 }, TileCell { code: 1 }]],
+            spawns: BTreeMap::new(),
+        };
+
+        let entities = tile_map_to_scene_entities(&map, 0);
+        let first = entities[1].sprite.as_ref().expect("first tile sprite");
+        let second = entities[2].sprite.as_ref().expect("second tile sprite");
+
+        assert_eq!(
+            first.texture.as_deref(),
+            Some("asset://sprites/open_tileset.png")
+        );
+        assert_eq!(
+            second.texture.as_deref(),
+            Some("asset://sprites/open_tileset.png")
+        );
+        assert_eq!(first.source_x, Some(1));
+        assert_eq!(first.source_y, Some(1));
+        assert_eq!(first.source_width, Some(16));
+        assert_eq!(first.source_height, Some(16));
+        assert_eq!(second.source_x, Some(37));
+        assert_eq!(second.source_y, Some(19));
     }
 }

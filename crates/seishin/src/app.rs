@@ -30,7 +30,7 @@ use seishin_core::{Engine, EngineResult, EntityId, Game, Transform2D, UpdateCont
 use seishin_input::{InputState, KeyCode};
 use seishin_render::{
     Camera2D, ClearColor, RenderSize, RenderState, RenderTargetDescriptor, RenderTargetId, Sprite,
-    SpriteTint, TextureData, TextureId,
+    SpriteRegion, SpriteTint, TextureData, TextureId,
 };
 #[cfg(test)]
 use seishin_render_graph::NodeLabel;
@@ -1406,6 +1406,7 @@ impl std::ops::Mul<f32> for Vec2 {
 pub struct SpriteRenderer {
     texture: Texture,
     size: Vec2,
+    region: SpriteRegion,
     tint: SpriteTint,
 }
 
@@ -1414,8 +1415,14 @@ impl SpriteRenderer {
         Self {
             texture,
             size,
+            region: SpriteRegion::FULL,
             tint: SpriteTint::WHITE,
         }
+    }
+
+    pub fn with_region(mut self, region: SpriteRegion) -> Self {
+        self.region = region;
+        self
     }
 
     pub fn with_tint(mut self, tint: SpriteTint) -> Self {
@@ -1513,13 +1520,36 @@ fn load_render_assets(
         .transpose()?
         .unwrap_or(SpriteTint::WHITE);
 
+    let texture = assets.texture(&sprite.texture)?;
+    let region = sprite_region_from_ref(sprite, &texture);
+
     Ok(Some(
         SpriteRenderer::new(
-            assets.texture(&sprite.texture)?,
+            texture,
             Vec2::new(sprite.width.unwrap_or(32.0), sprite.height.unwrap_or(32.0)),
         )
+        .with_region(region)
         .with_tint(tint),
     ))
+}
+
+fn sprite_region_from_ref(sprite: &SpriteRef, texture: &Texture) -> SpriteRegion {
+    match (
+        sprite.source_x,
+        sprite.source_y,
+        sprite.source_width,
+        sprite.source_height,
+    ) {
+        (Some(x), Some(y), Some(width), Some(height)) => SpriteRegion::from_pixels(
+            x,
+            y,
+            width,
+            height,
+            texture.data().width(),
+            texture.data().height(),
+        ),
+        _ => SpriteRegion::FULL,
+    }
 }
 
 fn load_audio_asset(
@@ -1560,6 +1590,7 @@ fn render_world(world: &World, render_cache: &RenderCache, render: &mut RenderCo
                 renderer.size.x,
                 renderer.size.y,
             )
+            .with_region(renderer.region)
             .with_tint(renderer.tint),
         );
     }
@@ -3665,6 +3696,10 @@ mod tests {
                         texture: "asset://sprites/front.png".to_string(),
                         width: Some(16.0),
                         height: Some(16.0),
+                        source_x: None,
+                        source_y: None,
+                        source_width: None,
+                        source_height: None,
                         layer: 5,
                         sort_order: 0,
                         tint: None,
@@ -3681,6 +3716,10 @@ mod tests {
                         texture: "asset://sprites/middle.png".to_string(),
                         width: Some(16.0),
                         height: Some(16.0),
+                        source_x: None,
+                        source_y: None,
+                        source_width: None,
+                        source_height: None,
                         layer: 1,
                         sort_order: 7,
                         tint: None,
@@ -3697,6 +3736,10 @@ mod tests {
                         texture: "asset://sprites/back.png".to_string(),
                         width: Some(16.0),
                         height: Some(16.0),
+                        source_x: None,
+                        source_y: None,
+                        source_width: None,
+                        source_height: None,
                         layer: 1,
                         sort_order: -2,
                         tint: None,

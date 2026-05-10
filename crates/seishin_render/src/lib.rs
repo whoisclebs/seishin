@@ -8,5 +8,6 @@ pub use error::RenderError;
 pub use renderer::Renderer;
 pub use types::{
     Camera2D, ClearColor, RenderSize, RenderState, RenderTargetDescriptor, RenderTargetId,
-    RenderTargetKind, Sprite, SpriteBatch, SpriteMaterial, SpriteTint, TextureData, TextureId,
+    RenderTargetKind, Sprite, SpriteBatch, SpriteMaterial, SpriteRegion, SpriteTint, TextureData,
+    TextureId,
 };

@@ -102,6 +102,14 @@ pub struct SceneSpriteDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_x: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_y: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub layer: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<i32>,

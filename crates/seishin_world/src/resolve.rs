@@ -201,6 +201,18 @@ fn merge_sprite(
     let height = override_value
         .height
         .or_else(|| base.as_ref().and_then(|sprite| sprite.height));
+    let source_x = override_value
+        .source_x
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.source_x));
+    let source_y = override_value
+        .source_y
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.source_y));
+    let source_width = override_value
+        .source_width
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.source_width));
+    let source_height = override_value
+        .source_height
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.source_height));
     let layer = override_value
         .layer
         .or_else(|| base.as_ref().and_then(|sprite| sprite.layer));
@@ -214,6 +226,10 @@ fn merge_sprite(
     (texture.is_some()
         || width.is_some()
         || height.is_some()
+        || source_x.is_some()
+        || source_y.is_some()
+        || source_width.is_some()
+        || source_height.is_some()
         || layer.is_some()
         || sort_order.is_some()
         || tint.is_some())
@@ -221,6 +237,10 @@ fn merge_sprite(
         texture,
         width,
         height,
+        source_x,
+        source_y,
+        source_width,
+        source_height,
         layer,
         sort_order,
         tint,
@@ -235,6 +255,10 @@ fn finalize_sprite(sprite: Option<SceneSpriteDocument>) -> Option<SpriteRef> {
         texture,
         width: sprite.width,
         height: sprite.height,
+        source_x: sprite.source_x,
+        source_y: sprite.source_y,
+        source_width: sprite.source_width,
+        source_height: sprite.source_height,
         layer: sprite.layer.unwrap_or_default(),
         sort_order: sprite.sort_order.unwrap_or_default(),
         tint: sprite.tint,
@@ -518,6 +542,10 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                source_x: None,
+                source_y: None,
+                source_width: None,
+                source_height: None,
                 layer: 0,
                 sort_order: 0,
                 tint: None,
@@ -557,6 +585,10 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                source_x: None,
+                source_y: None,
+                source_width: None,
+                source_height: None,
                 layer: 5,
                 sort_order: 7,
                 tint: None,
@@ -601,6 +633,10 @@ mod tests {
                 texture: "asset://sprites/player.png".to_string(),
                 width: Some(96.0),
                 height: Some(96.0),
+                source_x: None,
+                source_y: None,
+                source_width: None,
+                source_height: None,
                 layer: 0,
                 sort_order: 0,
                 tint: None,

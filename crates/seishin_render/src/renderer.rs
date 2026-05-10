@@ -444,36 +444,37 @@ fn sprite_vertices(sprite: Sprite, camera: Camera2D, viewport: RenderSize) -> [S
     let bottom_right = camera.world_to_ndc(bottom_right.0, bottom_right.1, viewport);
     let bottom_left = camera.world_to_ndc(bottom_left.0, bottom_left.1, viewport);
     let color = sprite.material.tint.as_array();
+    let region = sprite.region;
 
     [
         SpriteVertex {
             position: top_left,
-            uv: [0.0, 0.0],
+            uv: [region.min_u, region.min_v],
             color,
         },
         SpriteVertex {
             position: top_right,
-            uv: [1.0, 0.0],
+            uv: [region.max_u, region.min_v],
             color,
         },
         SpriteVertex {
             position: bottom_right,
-            uv: [1.0, 1.0],
+            uv: [region.max_u, region.max_v],
             color,
         },
         SpriteVertex {
             position: top_left,
-            uv: [0.0, 0.0],
+            uv: [region.min_u, region.min_v],
             color,
         },
         SpriteVertex {
             position: bottom_right,
-            uv: [1.0, 1.0],
+            uv: [region.max_u, region.max_v],
             color,
         },
         SpriteVertex {
             position: bottom_left,
-            uv: [0.0, 1.0],
+            uv: [region.min_u, region.max_v],
             color,
         },
     ]
@@ -526,6 +527,7 @@ mod tests {
             width: 100.0,
             height: 50.0,
             material: Default::default(),
+            region: Default::default(),
         };
 
         let vertices = sprite_vertices(sprite, Camera2D::default(), RenderSize::new(200, 100));
@@ -550,5 +552,23 @@ mod tests {
         assert!(vertices
             .iter()
             .all(|vertex| vertex.color == tint.as_array()));
+    }
+
+    #[test]
+    fn sprite_vertices_use_sprite_region_uvs() {
+        let sprite = Sprite::new(
+            TextureId::new(1),
+            Transform2D::from_translation(0.0, 0.0),
+            100.0,
+            50.0,
+        )
+        .with_region(crate::SpriteRegion::new(0.25, 0.5, 0.75, 1.0));
+
+        let vertices = sprite_vertices(sprite, Camera2D::default(), RenderSize::new(200, 100));
+
+        assert_eq!(vertices[0].uv, [0.25, 0.5]);
+        assert_eq!(vertices[1].uv, [0.75, 0.5]);
+        assert_eq!(vertices[2].uv, [0.75, 1.0]);
+        assert_eq!(vertices[5].uv, [0.25, 1.0]);
     }
 }
