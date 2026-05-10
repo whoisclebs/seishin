@@ -1,0 +1,38 @@
+[[entities]]
+name = "Player"
+prefab = "res://prefabs/player.prefab.toml"
+
+[entities.transform]
+x = 0.0
+y = 0.0
+
+[entities.tags]
+values = ["player", "controllable"]
+
+[[entities]]
+name = "Merchant"
+prefab = "res://prefabs/npc.prefab.toml"
+
+[entities.transform]
+x = 240.0
+y = 80.0
+
+[entities.data]
+character = "res://data/characters/merchant.toml"
+
+[entities.tags]
+values = ["npc", "interactable"]
+
+[[entities]]
+name = "Blacksmith"
+prefab = "res://prefabs/npc.prefab.toml"
+
+[entities.transform]
+x = 400.0
+y = 120.0
+
+[entities.data]
+character = "res://data/characters/blacksmith.toml"
+
+[entities.tags]
+values = ["npc", "interactable"]

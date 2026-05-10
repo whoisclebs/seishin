@@ -1,0 +1,6 @@
+id = "blacksmith"
+display_name = "Blacksmith"
+sprite = "asset://sprites/player.png"
+
+[dialogue]
+default = "res://data/dialogues/blacksmith_intro.dialogue.toml"

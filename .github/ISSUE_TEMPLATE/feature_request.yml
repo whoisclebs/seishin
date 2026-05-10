@@ -1,0 +1,49 @@
+name: Feature Request
+description: Suggest an improvement for seishin.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the desired behavior or API.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - core
+        - runtime/windowing
+        - render
+        - input
+        - assets
+        - audio
+        - physics
+        - FFI/bindings
+        - docs/tooling
+        - example/gameplay DX
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope Check
+      options:
+        - label: This fits the MVP philosophy or is intentionally proposed as post-MVP work.
+          required: true
+        - label: This does not require exposing backend internals in public API.
+          required: true

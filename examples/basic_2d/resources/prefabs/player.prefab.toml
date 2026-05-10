@@ -1,0 +1,8 @@
+[components.sprite]
+texture = "asset://sprites/player.png"
+width = 96.0
+height = 96.0
+
+[components.controller]
+type = "PlayerController"
+speed = 180.0

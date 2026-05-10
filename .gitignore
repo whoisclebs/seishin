@@ -1,0 +1,49 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Keep Cargo.lock tracked for this workspace/application-style repository.
+#! Cargo.lock
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Logs and coverage
+*.log
+*.profraw
+*.profdata
+coverage/
+tarpaulin-report.html
+
+# Temporary project artifacts
+.tmp/
+tmp/
+temp/
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Native build output
+*.dll
+*.dylib
+*.so
+*.a
+*.lib
+*.pdb
+*.exe
+
+# Generated binding/build folders
+bindings/go/build/
+dist/
+build/
