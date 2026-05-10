@@ -9,6 +9,3 @@ height = 80.0
 [components.controller]
 type = "WandererController"
 speed = 55.0
-
-[components.audio]
-sound = "asset://audio/beep.wav"

@@ -6,16 +6,17 @@ mod components;
 
 use components::WandererController;
 
-const TILE_SIZE: f32 = 80.0;
+const DEFAULT_TILE_SIZE: f32 = 80.0;
 const DEFAULT_PLAYER_SPEED: f32 = 180.0;
 const STEP_SOUND_COOLDOWN_SECONDS: f32 = 0.18;
-const INTERACT_DISTANCE: f32 = TILE_SIZE * 1.4;
+const INTERACT_DISTANCE_TILE_FACTOR: f32 = 1.4;
 const MINI_RPG_MAP: &str = include_str!("../resources/data/maps/overworld.map");
 
 #[derive(Debug, Clone)]
 struct MapDefinition {
     rows: Vec<Vec<MapCell>>,
     spawns: HashMap<String, (i32, i32)>,
+    tile_size: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,6 +27,10 @@ enum MapCell {
 }
 
 impl MapDefinition {
+    fn tile_size(&self) -> f32 {
+        self.tile_size
+    }
+
     fn width(&self) -> i32 {
         self.rows.iter().map(|row| row.len()).max().unwrap_or(0) as i32
     }
@@ -35,8 +40,8 @@ impl MapDefinition {
     }
 
     fn is_walkable(&self, world_x: f32, world_y: f32) -> bool {
-        let x = (world_x / TILE_SIZE).floor() as i32;
-        let y = (world_y / TILE_SIZE).floor() as i32;
+        let x = (world_x / self.tile_size).floor() as i32;
+        let y = (world_y / self.tile_size).floor() as i32;
 
         if x < 0 || y < 0 || y >= self.height() || x >= self.width() {
             return false;
@@ -51,7 +56,7 @@ impl MapDefinition {
     }
 
     fn tile_position_to_world(&self, x: i32, y: i32) -> Vec2 {
-        Vec2::new(x as f32 * TILE_SIZE, y as f32 * TILE_SIZE)
+        Vec2::new(x as f32 * self.tile_size, y as f32 * self.tile_size)
     }
 }
 
@@ -60,6 +65,7 @@ impl Default for MapDefinition {
         Self {
             rows: Vec::new(),
             spawns: HashMap::new(),
+            tile_size: DEFAULT_TILE_SIZE,
         }
     }
 }
@@ -71,50 +77,117 @@ struct Game {
     step_sound_cooldown: f32,
     player_speed: f32,
     camera_target: Vec2,
+    interaction_range: f32,
 }
 
 impl Game {
-    fn parse_map(source: &str) -> MapDefinition {
+    fn parse_map(source: &str) -> GameResult<MapDefinition> {
         let mut map = MapDefinition::default();
+
+        let mut section_tiles = false;
+        let mut section_objects = false;
+
         for (row_index, row_text) in source.lines().enumerate() {
             let row_text = row_text.trim_end_matches('\r');
-            let mut row = Vec::with_capacity(row_text.len());
-            let world_row = row_index as i32;
+            let row_text = row_text.trim();
 
-            for (column_index, symbol) in row_text.chars().enumerate() {
-                let column = column_index as i32;
-
-                let cell = match symbol {
-                    '#' => MapCell::Wall,
-                    '~' => MapCell::Water,
-                    'P' => {
-                        map.spawns
-                            .entry("Player".to_string())
-                            .or_insert((column, world_row));
-                        MapCell::Floor
-                    }
-                    'N' => {
-                        map.spawns
-                            .entry("Merchant".to_string())
-                            .or_insert((column, world_row));
-                        MapCell::Floor
-                    }
-                    'G' => {
-                        map.spawns
-                            .entry("Goblin".to_string())
-                            .or_insert((column, world_row));
-                        MapCell::Floor
-                    }
-                    _ => MapCell::Floor,
-                };
-
-                row.push(cell);
+            if row_text.is_empty() || row_text.starts_with('#') {
+                continue;
             }
 
-            if !row.is_empty() {
-                map.rows.push(row);
+            if row_text == "[tiles]" {
+                section_tiles = true;
+                section_objects = false;
+                continue;
+            }
+
+            if row_text == "[objects]" {
+                section_tiles = false;
+                section_objects = true;
+                continue;
+            }
+
+            if row_text.starts_with("tile_size") && !section_tiles && !section_objects {
+                let value = row_text
+                    .split_once('=')
+                    .and_then(|(_, value)| value.trim().parse::<f32>().ok())
+                    .ok_or_else(|| {
+                        let line_number = row_index + 1;
+                        format!("invalid tile_size value in map at line {line_number}")
+                    })?;
+                if value <= 0.0 {
+                    let line_number = row_index + 1;
+                    return Err(format!("tile_size must be greater than 0 at line {line_number}").into());
+                }
+                map.tile_size = value;
+                continue;
+            }
+
+            if section_tiles {
+                let mut row = Vec::new();
+                for token in row_text.split(',') {
+                    let value = token
+                        .trim()
+                        .parse::<u8>()
+                        .map_err(|_| {
+                            let line_number = row_index + 1;
+                            let token = token.trim();
+                            format!("invalid tile code '{token}' at line {line_number}")
+                        })?;
+
+                    let cell = match value {
+                        0 => MapCell::Floor,
+                        1 => MapCell::Wall,
+                        2 => MapCell::Water,
+                        _ => {
+                            let line_number = row_index + 1;
+                            return Err(format!(
+                                "invalid tile code {value} at line {line_number}; expected 0, 1, or 2"
+                            )
+                            .into());
+                        }
+                    };
+
+                    row.push(cell);
+                }
+
+                if !row.is_empty() {
+                    map.rows.push(row);
+                }
+                continue;
+            }
+
+            if section_objects {
+                let (name, values) = row_text.split_once('=').ok_or_else(|| {
+                    let line_number = row_index + 1;
+                    format!("invalid object line, expected Name=x,y at line {line_number}")
+                })?;
+                let (x_text, y_text) = values.split_once(',').ok_or_else(|| {
+                    let line_number = row_index + 1;
+                    format!("invalid object coordinates, expected x,y at line {line_number}")
+                })?;
+
+                let x = x_text.trim().parse::<i32>().map_err(|_| {
+                    let line_number = row_index + 1;
+                    format!("invalid x coordinate at line {line_number}")
+                })?;
+                let y = y_text.trim().parse::<i32>().map_err(|_| {
+                    let line_number = row_index + 1;
+                    format!("invalid y coordinate at line {line_number}")
+                })?;
+
+                map
+                    .spawns
+                    .insert(name.trim().to_string(), (x, y));
+                continue;
             }
         }
+
+        if map.rows.is_empty() {
+            return Err("map has no [tiles] section or empty rows".into());
+        }
+
+        // Keep compatibility with scene-driven defaults.
 
         if !map.spawns.contains_key("Player") {
             map.spawns.insert("Player".to_string(), (1, 1));
@@ -130,17 +203,18 @@ impl Game {
                 .insert("Goblin".to_string(), (map.width() - 2, map.height() - 2));
         }
 
-        map
+        Ok(map)
     }
 
     fn ensure_tiles(context: &mut StartupContext, map: &MapDefinition) -> GameResult<()> {
+        let tile_size = map.tile_size();
         for (y, row) in map.rows.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
                 let world_pos = map.tile_position_to_world(x as i32, y as i32);
                 let mut sprite = context
                     .sprite("asset://sprites/tile.png")
                     .position(world_pos.x, world_pos.y)
-                    .size(TILE_SIZE, TILE_SIZE);
+                    .size(tile_size, tile_size);
 
                 sprite = match cell {
                     MapCell::Wall => sprite.rgba_tint(0.2, 0.2, 0.24, 1.0),
@@ -250,7 +324,7 @@ impl Game {
     }
 
     fn closest_character(&self, world: &World, from: Vec2) -> Option<Entity> {
-        let max_distance = INTERACT_DISTANCE * INTERACT_DISTANCE;
+        let max_distance = self.interaction_range * self.interaction_range;
         let mut nearest: Option<(Entity, f32)> = None;
 
         for entity in world.entities_with_tag("character") {
@@ -337,7 +411,8 @@ impl Game2D for Game {
                 Ok(Box::new(WandererController::new(speed)))
             })?;
 
-        let map = Self::parse_map(MINI_RPG_MAP);
+        let map = Self::parse_map(MINI_RPG_MAP)?;
+        let interaction_range = map.tile_size() * INTERACT_DISTANCE_TILE_FACTOR;
         Self::ensure_tiles(context, &map)?;
 
         Ok(Self {
@@ -347,6 +422,7 @@ impl Game2D for Game {
             step_sound_cooldown: 0.0,
             player_speed: DEFAULT_PLAYER_SPEED,
             camera_target: Vec2::ZERO,
+            interaction_range,
         })
     }
 
