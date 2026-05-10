@@ -37,7 +37,7 @@ seishin_assets = { path = "crates/seishin_assets", version = "0.1.0", default-fe
 seishin_audio = { path = "crates/seishin_audio", version = "0.1.0", default-features = false }
 seishin_physics = { path = "crates/seishin_physics", version = "0.1.0" }
 bytemuck = { version = "1.15.0", features = ["derive"] }
-kira = { version = "0.12.0", default-features = false, features = ["cpal", "wav"] }
+kira = { version = "0.12.0", default-features = false, features = ["cpal", "wav", "pcm"] }
 js-sys = "0.3.97"
 raw-window-handle = "0.6.2"
 serde = { version = "1.0.228", features = ["derive"] }

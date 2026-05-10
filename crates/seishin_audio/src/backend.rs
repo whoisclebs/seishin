@@ -367,6 +367,19 @@ fn is_supported_web_audio_path(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "kira-backend"))]
+    #[test]
+    fn native_backend_decodes_pcm_wav_assets() {
+        let root_dir = unique_test_dir();
+        std::fs::create_dir_all(&root_dir).expect("create test dir");
+        let sound_path = root_dir.join("beep.wav");
+        write_pcm_wav(&sound_path);
+
+        StaticSoundData::from_file(&sound_path).expect("pcm wav asset decodes");
+
+        let _ = std::fs::remove_dir_all(root_dir);
+    }
+
     #[test]
     fn web_audio_extension_filter_accepts_browser_formats_and_rejects_unknown() {
         assert!(is_supported_web_audio_path(Path::new("audio/beep.wav")));
@@ -376,5 +389,51 @@ mod tests {
         assert!(!is_supported_web_audio_path(Path::new(
             "audio/no_extension"
         )));
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "kira-backend"))]
+    fn write_pcm_wav(path: &Path) {
+        use std::io::Write;
+
+        let sample_rate = 44_100u32;
+        let sample_count = sample_rate / 20;
+        let data_bytes = sample_count * 2;
+        let mut file = std::fs::File::create(path).expect("create wav");
+
+        file.write_all(b"RIFF").expect("write riff");
+        file.write_all(&(36 + data_bytes).to_le_bytes())
+            .expect("write riff size");
+        file.write_all(b"WAVEfmt ").expect("write wave fmt");
+        file.write_all(&16u32.to_le_bytes())
+            .expect("write fmt size");
+        file.write_all(&1u16.to_le_bytes())
+            .expect("write pcm format");
+        file.write_all(&1u16.to_le_bytes()).expect("write channels");
+        file.write_all(&sample_rate.to_le_bytes())
+            .expect("write sample rate");
+        file.write_all(&(sample_rate * 2).to_le_bytes())
+            .expect("write byte rate");
+        file.write_all(&2u16.to_le_bytes())
+            .expect("write block align");
+        file.write_all(&16u16.to_le_bytes())
+            .expect("write bit depth");
+        file.write_all(b"data").expect("write data tag");
+        file.write_all(&data_bytes.to_le_bytes())
+            .expect("write data size");
+
+        for index in 0..sample_count {
+            let phase = index as f32 / sample_rate as f32 * 440.0 * std::f32::consts::TAU;
+            let sample = (phase.sin() * 0.25 * i16::MAX as f32) as i16;
+            file.write_all(&sample.to_le_bytes()).expect("write sample");
+        }
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "kira-backend"))]
+    fn unique_test_dir() -> std::path::PathBuf {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("seishin-audio-test-{}-{now}", std::process::id()))
     }
 }
