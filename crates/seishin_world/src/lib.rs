@@ -87,6 +87,7 @@ mod tests {
                         height: Some(96.0),
                         layer: 0,
                         sort_order: 0,
+                        tint: None,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/step.wav".to_string(),
@@ -392,7 +393,7 @@ mod tests {
     #[test]
     fn sprite_order_and_instance_source_round_trip_through_scene_data() {
         let scene = SceneDocument::from_toml_str(
-            r#"
+            r##"
             [[entities]]
             id = 10
             name = "Instanced Enemy"
@@ -403,11 +404,12 @@ mod tests {
             height = 64.0
             layer = 2
             sort_order = -3
+            tint = "#80ffcc99"
 
             [entities.instance]
             scene = "res://scenes/enemy_pack.scene.toml"
             source_entity = 4
-            "#,
+            "##,
         )
         .expect("parse scene");
         let resolved = resolve_scene_entity(scene.entities[0].clone(), None).expect("resolve");
@@ -419,6 +421,7 @@ mod tests {
         let sprite = world.sprite(entity).expect("sprite");
         assert_eq!(sprite.layer, 2);
         assert_eq!(sprite.sort_order, -3);
+        assert_eq!(sprite.tint.as_deref(), Some("#80ffcc99"));
         assert_eq!(
             world
                 .entity(entity)
@@ -446,6 +449,13 @@ mod tests {
                 .as_ref()
                 .and_then(|sprite| sprite.sort_order),
             Some(-3)
+        );
+        assert_eq!(
+            exported_entity
+                .sprite
+                .as_ref()
+                .and_then(|sprite| sprite.tint.as_deref()),
+            Some("#80ffcc99")
         );
         assert_eq!(
             exported_entity
@@ -479,6 +489,7 @@ mod tests {
                         height: None,
                         layer: 0,
                         sort_order: 0,
+                        tint: None,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/high.wav".to_string(),
@@ -503,6 +514,7 @@ mod tests {
                         height: None,
                         layer: 0,
                         sort_order: 0,
+                        tint: None,
                     }),
                     audio: Some(AudioRef {
                         sound: "asset://audio/low.wav".to_string(),
@@ -568,6 +580,7 @@ mod tests {
                         height: Some(32.0),
                         layer: 0,
                         sort_order: 0,
+                        tint: None,
                     }),
             )
             .build();

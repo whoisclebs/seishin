@@ -207,18 +207,23 @@ fn merge_sprite(
     let sort_order = override_value
         .sort_order
         .or_else(|| base.as_ref().and_then(|sprite| sprite.sort_order));
+    let tint = override_value
+        .tint
+        .or_else(|| base.as_ref().and_then(|sprite| sprite.tint.clone()));
 
     (texture.is_some()
         || width.is_some()
         || height.is_some()
         || layer.is_some()
-        || sort_order.is_some())
+        || sort_order.is_some()
+        || tint.is_some())
     .then_some(SceneSpriteDocument {
         texture,
         width,
         height,
         layer,
         sort_order,
+        tint,
     })
 }
 
@@ -232,6 +237,7 @@ fn finalize_sprite(sprite: Option<SceneSpriteDocument>) -> Option<SpriteRef> {
         height: sprite.height,
         layer: sprite.layer.unwrap_or_default(),
         sort_order: sprite.sort_order.unwrap_or_default(),
+        tint: sprite.tint,
     })
 }
 
@@ -514,6 +520,7 @@ mod tests {
                 height: Some(96.0),
                 layer: 0,
                 sort_order: 0,
+                tint: None,
             })
         );
     }
@@ -552,6 +559,7 @@ mod tests {
                 height: Some(96.0),
                 layer: 5,
                 sort_order: 7,
+                tint: None,
             })
         );
     }
@@ -595,6 +603,7 @@ mod tests {
                 height: Some(96.0),
                 layer: 0,
                 sort_order: 0,
+                tint: None,
             })
         );
     }

@@ -143,6 +143,7 @@ fn scene_entity_document_from_record(
             height: sprite.height,
             layer: (sprite.layer != 0).then_some(sprite.layer),
             sort_order: (sprite.sort_order != 0).then_some(sprite.sort_order),
+            tint: sprite.tint.clone(),
         }),
         audio: record.audio.as_ref().map(|audio| SceneAudioDocument {
             sound: Some(audio.sound.clone()),

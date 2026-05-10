@@ -679,6 +679,7 @@ mod tests {
                     height: None,
                     layer: 0,
                     sort_order: 0,
+                    tint: None,
                 }),
             )
             .expect("insert high");
@@ -712,6 +713,7 @@ mod tests {
                     height: Some(16.0),
                     layer: 1,
                     sort_order: 2,
+                    tint: None,
                 },
             )
             .expect("set sprite");
@@ -757,6 +759,7 @@ mod tests {
             height: Some(96.0),
             layer: 0,
             sort_order: 0,
+            tint: None,
         }));
 
         world.translate(entity, 3.0, 4.0).expect("translate");

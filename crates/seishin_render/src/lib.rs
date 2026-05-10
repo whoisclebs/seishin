@@ -7,5 +7,6 @@ pub use error::RenderError;
 #[cfg(feature = "wgpu-backend")]
 pub use renderer::Renderer;
 pub use types::{
-    Camera2D, ClearColor, RenderSize, RenderState, Sprite, SpriteBatch, TextureData, TextureId,
+    Camera2D, ClearColor, RenderSize, RenderState, Sprite, SpriteBatch, SpriteMaterial, SpriteTint,
+    TextureData, TextureId,
 };

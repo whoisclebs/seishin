@@ -96,6 +96,8 @@ pub struct SceneSpriteDocument {
     pub layer: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tint: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]

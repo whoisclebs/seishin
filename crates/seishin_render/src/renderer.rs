@@ -340,6 +340,7 @@ struct GpuTexture {
 struct SpriteVertex {
     position: [f32; 2],
     uv: [f32; 2],
+    color: [f32; 4],
 }
 
 impl SpriteVertex {
@@ -357,6 +358,11 @@ impl SpriteVertex {
                     format: wgpu::VertexFormat::Float32x2,
                     offset: std::mem::size_of::<[f32; 2]>() as u64,
                     shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: (std::mem::size_of::<[f32; 2]>() * 2) as u64,
+                    shader_location: 2,
                 },
             ],
         }
@@ -431,31 +437,38 @@ fn sprite_vertices(sprite: Sprite, camera: Camera2D, viewport: RenderSize) -> [S
     let top_right = camera.world_to_ndc(top_right.0, top_right.1, viewport);
     let bottom_right = camera.world_to_ndc(bottom_right.0, bottom_right.1, viewport);
     let bottom_left = camera.world_to_ndc(bottom_left.0, bottom_left.1, viewport);
+    let color = sprite.material.tint.as_array();
 
     [
         SpriteVertex {
             position: top_left,
             uv: [0.0, 0.0],
+            color,
         },
         SpriteVertex {
             position: top_right,
             uv: [1.0, 0.0],
+            color,
         },
         SpriteVertex {
             position: bottom_right,
             uv: [1.0, 1.0],
+            color,
         },
         SpriteVertex {
             position: top_left,
             uv: [0.0, 0.0],
+            color,
         },
         SpriteVertex {
             position: bottom_right,
             uv: [1.0, 1.0],
+            color,
         },
         SpriteVertex {
             position: bottom_left,
             uv: [0.0, 1.0],
+            color,
         },
     ]
 }
@@ -464,11 +477,13 @@ const SPRITE_SHADER: &str = r#"
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -482,12 +497,13 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.clip_position = vec4<f32>(input.position, 0.0, 1.0);
     output.uv = input.uv;
+    output.color = input.color;
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(sprite_texture, sprite_sampler, input.uv);
+    return textureSample(sprite_texture, sprite_sampler, input.uv) * input.color;
 }
 "#;
 
@@ -503,11 +519,30 @@ mod tests {
             transform: Transform2D::from_translation(0.0, 0.0),
             width: 100.0,
             height: 50.0,
+            material: Default::default(),
         };
 
         let vertices = sprite_vertices(sprite, Camera2D::default(), RenderSize::new(200, 100));
 
         assert_eq!(vertices[0].position, [-0.5, 0.5]);
         assert_eq!(vertices[2].position, [0.5, -0.5]);
+    }
+
+    #[test]
+    fn sprite_vertices_include_sprite_tint() {
+        let tint = crate::SpriteTint::rgba(0.2, 0.4, 0.6, 0.8);
+        let sprite = Sprite::new(
+            TextureId::new(1),
+            Transform2D::from_translation(0.0, 0.0),
+            100.0,
+            50.0,
+        )
+        .with_tint(tint);
+
+        let vertices = sprite_vertices(sprite, Camera2D::default(), RenderSize::new(200, 100));
+
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color == tint.as_array()));
     }
 }

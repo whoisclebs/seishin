@@ -169,6 +169,7 @@ pub struct Sprite {
     pub transform: Transform2D,
     pub width: f32,
     pub height: f32,
+    pub material: SpriteMaterial,
 }
 
 impl Sprite {
@@ -178,7 +179,17 @@ impl Sprite {
             transform,
             width,
             height,
+            material: SpriteMaterial::default(),
         }
+    }
+
+    pub fn with_material(mut self, material: SpriteMaterial) -> Self {
+        self.material = material;
+        self
+    }
+
+    pub fn with_tint(self, tint: SpriteTint) -> Self {
+        self.with_material(SpriteMaterial { tint })
     }
 
     #[cfg(feature = "wgpu-backend")]
@@ -204,6 +215,48 @@ impl Sprite {
                 self.transform.y + half_height,
             ),
         ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpriteMaterial {
+    pub tint: SpriteTint,
+}
+
+impl Default for SpriteMaterial {
+    fn default() -> Self {
+        Self {
+            tint: SpriteTint::WHITE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpriteTint {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+impl SpriteTint {
+    pub const WHITE: Self = Self::rgba(1.0, 1.0, 1.0, 1.0);
+
+    pub const fn rgb(red: f32, green: f32, blue: f32) -> Self {
+        Self::rgba(red, green, blue, 1.0)
+    }
+
+    pub const fn rgba(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha,
+        }
+    }
+
+    pub const fn as_array(self) -> [f32; 4] {
+        [self.red, self.green, self.blue, self.alpha]
     }
 }
 
@@ -361,6 +414,23 @@ mod tests {
                 SpriteBatch::new(TextureId::new(1), 3, 1),
             ]
         );
+    }
+
+    #[test]
+    fn sprite_material_defaults_to_opaque_white_and_can_be_tinted() {
+        let sprite = Sprite::new(
+            TextureId::new(1),
+            Transform2D::from_translation(0.0, 0.0),
+            16.0,
+            16.0,
+        );
+
+        assert_eq!(sprite.material, SpriteMaterial::default());
+        assert_eq!(sprite.material.tint, SpriteTint::WHITE);
+
+        let tinted = sprite.with_tint(SpriteTint::rgba(0.25, 0.5, 0.75, 0.8));
+
+        assert_eq!(tinted.material.tint, SpriteTint::rgba(0.25, 0.5, 0.75, 0.8));
     }
 
     #[test]

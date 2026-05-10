@@ -25,7 +25,9 @@ use seishin_audio::{AudioSystem, PlaybackResult, SoundAsset};
 use seishin_core::EngineConfig;
 use seishin_core::{Engine, EngineResult, EntityId, Game, Transform2D, UpdateContext};
 use seishin_input::{InputState, KeyCode};
-use seishin_render::{Camera2D, ClearColor, RenderState, Sprite, TextureData, TextureId};
+use seishin_render::{
+    Camera2D, ClearColor, RenderState, Sprite, SpriteTint, TextureData, TextureId,
+};
 #[cfg(test)]
 use seishin_render_graph::NodeLabel;
 use seishin_render_graph::{RenderGraph, RenderGraphError};
@@ -619,7 +621,7 @@ impl StartupContext {
     }
 
     pub fn spawn(&mut self, bundle: SpriteBundle) -> GameResult<Entity> {
-        let renderer = SpriteRenderer::new(bundle.texture, bundle.size);
+        let renderer = SpriteRenderer::new(bundle.texture, bundle.size).with_tint(bundle.tint);
         let entity = self.world.spawn(EntityRecord {
             transform: bundle.transform,
             ..EntityRecord::default()
@@ -990,11 +992,25 @@ impl std::ops::Mul<f32> for Vec2 {
 pub struct SpriteRenderer {
     texture: Texture,
     size: Vec2,
+    tint: SpriteTint,
 }
 
 impl SpriteRenderer {
     pub fn new(texture: Texture, size: Vec2) -> Self {
-        Self { texture, size }
+        Self {
+            texture,
+            size,
+            tint: SpriteTint::WHITE,
+        }
+    }
+
+    pub fn with_tint(mut self, tint: SpriteTint) -> Self {
+        self.tint = tint;
+        self
+    }
+
+    pub fn tint(&self) -> SpriteTint {
+        self.tint
     }
 }
 
@@ -1003,6 +1019,7 @@ pub struct SpriteBundle {
     pub texture: Texture,
     pub transform: Transform2D,
     pub size: Vec2,
+    pub tint: SpriteTint,
 }
 
 impl SpriteBundle {
@@ -1011,6 +1028,7 @@ impl SpriteBundle {
             texture,
             transform: Transform2D::default(),
             size: Vec2::splat(32.0),
+            tint: SpriteTint::WHITE,
         }
     }
 }
@@ -1074,11 +1092,20 @@ fn load_render_assets(
     let Some(sprite) = &record.sprite else {
         return Ok(None);
     };
+    let tint = sprite
+        .tint
+        .as_deref()
+        .map(parse_sprite_tint)
+        .transpose()?
+        .unwrap_or(SpriteTint::WHITE);
 
-    Ok(Some(SpriteRenderer::new(
-        assets.texture(&sprite.texture)?,
-        Vec2::new(sprite.width.unwrap_or(32.0), sprite.height.unwrap_or(32.0)),
-    )))
+    Ok(Some(
+        SpriteRenderer::new(
+            assets.texture(&sprite.texture)?,
+            Vec2::new(sprite.width.unwrap_or(32.0), sprite.height.unwrap_or(32.0)),
+        )
+        .with_tint(tint),
+    ))
 }
 
 fn load_audio_asset(
@@ -1112,12 +1139,15 @@ fn render_world(world: &World, render_cache: &RenderCache, render: &mut RenderCo
 
     for (_entity, record, renderer) in renderables {
         render.texture(&renderer.texture);
-        render.sprite(Sprite::new(
-            renderer.texture.id(),
-            record.transform,
-            renderer.size.x,
-            renderer.size.y,
-        ));
+        render.sprite(
+            Sprite::new(
+                renderer.texture.id(),
+                record.transform,
+                renderer.size.x,
+                renderer.size.y,
+            )
+            .with_tint(renderer.tint),
+        );
     }
 }
 
@@ -1195,6 +1225,7 @@ pub struct SpriteBuilder<'a> {
     texture_path: String,
     transform: Transform2D,
     size: Vec2,
+    tint: SpriteTint,
 }
 
 impl<'a> SpriteBuilder<'a> {
@@ -1204,6 +1235,7 @@ impl<'a> SpriteBuilder<'a> {
             texture_path,
             transform: Transform2D::default(),
             size: Vec2::splat(32.0),
+            tint: SpriteTint::WHITE,
         }
     }
 
@@ -1218,12 +1250,23 @@ impl<'a> SpriteBuilder<'a> {
         self
     }
 
+    pub fn tint(mut self, tint: SpriteTint) -> Self {
+        self.tint = tint;
+        self
+    }
+
+    pub fn rgba_tint(mut self, red: f32, green: f32, blue: f32, alpha: f32) -> Self {
+        self.tint = SpriteTint::rgba(red, green, blue, alpha);
+        self
+    }
+
     pub fn spawn(self) -> GameResult<Entity> {
         let texture = self.context.assets.texture(&self.texture_path)?;
         self.context.spawn(SpriteBundle {
             texture,
             transform: self.transform,
             size: self.size,
+            tint: self.tint,
         })
     }
 }
@@ -2443,6 +2486,47 @@ fn parse_clear_color(value: &str) -> Option<ClearColor> {
     }
 }
 
+fn parse_sprite_tint(value: &str) -> GameResult<SpriteTint> {
+    let hex = value.strip_prefix('#').ok_or_else(|| {
+        format!("sprite tint '{value}' must use #RRGGBB or #RRGGBBAA hexadecimal format")
+    })?;
+
+    let (red, green, blue, alpha) = match hex.len() {
+        6 => (
+            parse_hex_byte(&hex[0..2], value)?,
+            parse_hex_byte(&hex[2..4], value)?,
+            parse_hex_byte(&hex[4..6], value)?,
+            255,
+        ),
+        8 => (
+            parse_hex_byte(&hex[0..2], value)?,
+            parse_hex_byte(&hex[2..4], value)?,
+            parse_hex_byte(&hex[4..6], value)?,
+            parse_hex_byte(&hex[6..8], value)?,
+        ),
+        _ => {
+            return Err(format!(
+                "sprite tint '{value}' must use #RRGGBB or #RRGGBBAA hexadecimal format"
+            )
+            .into());
+        }
+    };
+
+    Ok(SpriteTint::rgba(
+        red as f32 / 255.0,
+        green as f32 / 255.0,
+        blue as f32 / 255.0,
+        alpha as f32 / 255.0,
+    ))
+}
+
+fn parse_hex_byte(value: &str, original: &str) -> GameResult<u8> {
+    u8::from_str_radix(value, 16).map_err(|error| {
+        format!("sprite tint '{original}' contains invalid hexadecimal byte '{value}': {error}")
+            .into()
+    })
+}
+
 fn parse_key_list(keys: Vec<String>) -> Vec<KeyCode> {
     keys.into_iter()
         .filter_map(|key| parse_key_code(&key))
@@ -2596,6 +2680,28 @@ mod tests {
     }
 
     #[test]
+    fn world_render_uses_sprite_renderer_tint() {
+        let texture = Texture {
+            data: TextureData::rgba8(TextureId::new(8), 1, 1, vec![255, 255, 255, 255])
+                .expect("valid texture"),
+        };
+        let tint = seishin_render::SpriteTint::rgba(0.1, 0.2, 0.3, 0.4);
+        let mut world = World::default();
+        let mut render_cache = RenderCache::default();
+        let entity = world.spawn(EntityRecord::default());
+        render_cache.insert(
+            entity,
+            SpriteRenderer::new(texture, Vec2::splat(16.0)).with_tint(tint),
+        );
+
+        let mut render = RenderContext::new(ClearColor::BLACK);
+        render_world(&world, &render_cache, &mut render);
+        let state = render.state();
+
+        assert_eq!(state.sprites[0].material.tint, tint);
+    }
+
+    #[test]
     fn world_render_order_uses_sprite_layer_sort_order_and_entity_id() {
         let back_texture = Texture {
             data: TextureData::rgba8(TextureId::new(10), 1, 1, vec![255, 255, 255, 255])
@@ -2625,6 +2731,7 @@ mod tests {
                         height: Some(16.0),
                         layer: 5,
                         sort_order: 0,
+                        tint: None,
                     }),
                     ..EntityRecord::default()
                 },
@@ -2640,6 +2747,7 @@ mod tests {
                         height: Some(16.0),
                         layer: 1,
                         sort_order: 7,
+                        tint: None,
                     }),
                     ..EntityRecord::default()
                 },
@@ -2655,6 +2763,7 @@ mod tests {
                         height: Some(16.0),
                         layer: 1,
                         sort_order: -2,
+                        tint: None,
                     }),
                     ..EntityRecord::default()
                 },
