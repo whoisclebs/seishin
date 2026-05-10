@@ -5,3 +5,6 @@ name = { value = "npc_prefab" }
 texture = "asset://sprites/merchant.png"
 width = 48.0
 height = 48.0
+
+[components.audio]
+sound = "asset://audio/beep.wav"

@@ -6,6 +6,9 @@ texture = "asset://sprites/enemy.png"
 width = 48.0
 height = 48.0
 
+[components.audio]
+sound = "asset://audio/beep.wav"
+
 [components.controller]
 type = "WandererController"
 speed = 55.0
